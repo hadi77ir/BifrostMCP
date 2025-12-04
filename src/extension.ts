@@ -1,16 +1,19 @@
 import * as vscode from 'vscode';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { 
     CallToolRequestSchema, 
     ListResourcesRequestSchema, 
     ListResourceTemplatesRequestSchema, 
-    ListToolsRequestSchema 
+    ListToolsRequestSchema, 
+    isInitializeRequest
 } from '@modelcontextprotocol/sdk/types.js';
 import express from 'express';
 import cors from 'cors';
 import type { Server as HttpServer } from 'http';
 import { Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { mcpTools } from './tools';
 import { createDebugPanel } from './debugPanel';
 import { mcpServer, httpServer, setMcpServer, setHttpServer } from './globals';
@@ -108,7 +111,6 @@ export async function activate(context: vscode.ExtensionContext) {
             {
                 name: config.projectName,
                 version: "0.1.0",
-                description: config.description
             },
             {
                 capabilities: {
@@ -170,12 +172,103 @@ export async function activate(context: vscode.ExtensionContext) {
         // Set up Express app
         const app = express();
         app.use(cors());
-        app.use(express.json());
+        app.use(express.json({ limit: '4mb' }));
 
         // Track active transports by session ID
-        const transports: { [sessionId: string]: SSEServerTransport } = {};
+        const transports: { [sessionId: string]: SSEServerTransport | StreamableHTTPServerTransport } = {};
 
         const basePath = getProjectBasePath(config);
+
+        // Create project-specific Streamable HTTP endpoint (preferred transport)
+        app.all(`${basePath}/mcp`, async (req: Request, res: Response) => {
+            console.log(`Received ${req.method} request for Streamable HTTP in project ${config.projectName}`);
+
+            try {
+                const sessionHeader = req.headers['mcp-session-id'];
+                const sessionId = Array.isArray(sessionHeader) ? sessionHeader[sessionHeader.length - 1] : sessionHeader;
+                let transport: StreamableHTTPServerTransport | undefined;
+
+                if (sessionId) {
+                    const existingTransport = transports[sessionId];
+                    if (existingTransport instanceof StreamableHTTPServerTransport) {
+                        transport = existingTransport;
+                    } else if (existingTransport instanceof SSEServerTransport) {
+                        res.status(400).json({
+                            jsonrpc: "2.0",
+                            id: req.body?.id ?? null,
+                            error: {
+                                code: -32000,
+                                message: "Bad Request: Session exists but uses the legacy SSE transport"
+                            }
+                        });
+                        return;
+                    }
+                }
+
+                if (!transport) {
+                    if (req.method === 'POST' && isInitializeRequest(req.body)) {
+                        transport = new StreamableHTTPServerTransport({
+                            sessionIdGenerator: () => randomUUID(),
+                            onsessioninitialized: (initializedSessionId) => {
+                                transports[initializedSessionId] = transport!;
+                                console.log(`Streamable HTTP session initialized with ID: ${initializedSessionId} for project ${config.projectName}`);
+                            },
+                            onsessionclosed: (closedSessionId) => {
+                                if (transports[closedSessionId] === transport) {
+                                    delete transports[closedSessionId];
+                                }
+                            }
+                        });
+
+                        transport.onclose = () => {
+                            const activeSessionId = transport?.sessionId;
+                            if (activeSessionId && transports[activeSessionId] === transport) {
+                                delete transports[activeSessionId];
+                            }
+                        };
+
+                        if (mcpServer) {
+                            await mcpServer.connect(transport);
+                            console.log(`Server connected to Streamable HTTP transport for project ${config.projectName}`);
+                        } else {
+                            res.status(500).json({
+                                jsonrpc: "2.0",
+                                id: (req.body as any)?.id ?? null,
+                                error: {
+                                    code: -32603,
+                                    message: "Internal error: MCP server not initialized"
+                                }
+                            });
+                            return;
+                        }
+                    } else {
+                        res.status(400).json({
+                            jsonrpc: "2.0",
+                            id: req.body?.id ?? null,
+                            error: {
+                                code: -32000,
+                                message: "Bad Request: No valid session ID provided"
+                            }
+                        });
+                        return;
+                    }
+                }
+
+                await transport.handleRequest(req, res, req.body);
+            } catch (error) {
+                console.error('Error handling Streamable HTTP request:', error);
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        jsonrpc: "2.0",
+                        id: req.body?.id ?? null,
+                        error: {
+                            code: -32603,
+                            message: "Internal server error"
+                        }
+                    });
+                }
+            }
+        });
 
         // Create project-specific SSE endpoint
         app.get(`${basePath}/sse`, async (req: Request, res: Response) => {
@@ -234,6 +327,18 @@ export async function activate(context: vscode.ExtensionContext) {
                     error: {
                         code: -32000,
                         message: "No active session found"
+                    }
+                });
+                return;
+            }
+            if (!(transport instanceof SSEServerTransport)) {
+                console.error(`Session ${sessionId} is using Streamable HTTP transport; POST /message is not supported`);
+                res.status(400).json({
+                    jsonrpc: "2.0",
+                    id: req.body?.id,
+                    error: {
+                        code: -32000,
+                        message: "Bad Request: Session is using Streamable HTTP transport"
                     }
                 });
                 return;
