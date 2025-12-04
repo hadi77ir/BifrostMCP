@@ -122,19 +122,28 @@ I have also provided sample rules that can be used in .cursorrules files for bet
 }
 ```
 
-![Screenshot_78](https://github.com/user-attachments/assets/55588c9e-7f88-4830-b87f-184018873ca1)
-
-Follow this video to install and use with cursor
-
-#### FOR NEW VERSIONS OF CURSOR, USE THIS CODE
+#### Cursor Installation
 ```json
 {
   "mcpServers": {
     "Bifrost": {
-      "url": "http://localhost:8008/sse"
+      "url": "http://localhost:8008/mcp"
     }
   }
 }
+```
+
+### Codex CLI / Codex VS Code Extension
+First, install mcp-proxy:
+```
+uv tool install mcp-proxy
+```
+
+Then in `~/.codex/config.toml` add this section:
+```
+[mcp_servers.Bifrost]
+command = "mcp-proxy"
+args = ["--transport", "streamablehttp", "http://localhost:8008/mcp"]
 ```
 
 ## Multiple Project Support
