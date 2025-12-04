@@ -792,6 +792,432 @@ export const mcpTools = [
             },
             required: ["query"]
         }
+    },
+    {
+        name: "list_formatters",
+        description: "Lists available document formatters for a given file, including the current default formatter.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to inspect for formatters",
+                    properties: {
+                        uri: {
+                            type: "string",
+                            description: "URI of the document"
+                        }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "format_document",
+        description: "Formats a document using the default formatter or a specified formatter if provided. Supports full-document or range formatting.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to format",
+                    properties: {
+                        uri: {
+                            type: "string",
+                            description: "URI of the document"
+                        }
+                    },
+                    required: ["uri"]
+                },
+                formatterId: {
+                    type: "string",
+                    description: "Optional formatter extension identifier (e.g., esbenp.prettier-vscode). If omitted, the default formatter is used."
+                },
+                range: {
+                    type: "object",
+                    description: "Optional range to format; if omitted, formats the entire document.",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number", description: "Zero-based line number" },
+                                character: { type: "number", description: "Zero-based character position" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number", description: "Zero-based line number" },
+                                character: { type: "number", description: "Zero-based character position" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    },
+                    required: ["start", "end"]
+                },
+                options: {
+                    type: "object",
+                    description: "Optional formatting options to override editor defaults.",
+                    properties: {
+                        tabSize: { type: "number", description: "Tab size to use for formatting" },
+                        insertSpaces: { type: "boolean", description: "Whether to use spaces instead of tabs" }
+                    }
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "run_terminal_command",
+        description: "Executes a shell command from the workspace. Uses VS Code terminal shell integration when available, or falls back to a child process. Returns captured output, stderr, and exit code.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                command: {
+                    type: "string",
+                    description: "Shell command to execute"
+                },
+                cwd: {
+                    type: "string",
+                    description: "Optional working directory for the command"
+                },
+                timeoutMs: {
+                    type: "number",
+                    description: "Optional timeout in milliseconds (default 10000)"
+                }
+            },
+            required: ["command"]
+        }
+    },
+    {
+        name: "search_regex",
+        description: "Performs a regex search across the workspace (or a specific folder), returning matches with surrounding context.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "Regular expression pattern to search for"
+                },
+                folder: {
+                    type: "string",
+                    description: "Optional workspace-relative folder path to scope the search"
+                },
+                maxResults: {
+                    type: "number",
+                    description: "Maximum number of matches to return (default 50)"
+                }
+            },
+            required: ["query"]
+        }
+    },
+    {
+        name: "list_files",
+        description: "Lists files in the current workspace (excluding common build and VCS folders) up to a specified limit.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                limit: {
+                    type: "number",
+                    description: "Maximum number of files to return (default 200)"
+                }
+            }
+        }
+    },
+    {
+        name: "summarize_definitions",
+        description: "Summarizes symbols/definitions in a document using document symbols as a lightweight structure.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to analyze",
+                    properties: {
+                        uri: {
+                            type: "string",
+                            description: "URI of the document"
+                        }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "list_source_actions",
+        description: "Lists available source actions (organize imports, fix all, etc.) for a document/range.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to inspect",
+                    properties: {
+                        uri: {
+                            type: "string",
+                            description: "URI of the document"
+                        }
+                    },
+                    required: ["uri"]
+                },
+                range: {
+                    type: "object",
+                    description: "Optional range to scope source actions",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    }
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "run_source_action",
+        description: "Runs a selected source action for the given document/range.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to act on",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                range: {
+                    type: "object",
+                    description: "Optional range to scope the action",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    }
+                },
+                title: {
+                    type: "string",
+                    description: "Title of the source action to execute"
+                },
+                kind: {
+                    type: "string",
+                    description: "Optional CodeActionKind to match a specific action"
+                }
+            },
+            required: ["textDocument", "title"]
+        }
+    },
+    {
+        name: "list_refactor_actions",
+        description: "Lists available refactor code actions at a position.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to inspect",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                position: {
+                    type: "object",
+                    description: "Position to request refactors",
+                    properties: {
+                        line: { type: "number" },
+                        character: { type: "number" }
+                    },
+                    required: ["line", "character"]
+                },
+                range: {
+                    type: "object",
+                    description: "Optional range to scope the refactor",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    }
+                }
+            },
+            required: ["textDocument", "position"]
+        }
+    },
+    {
+        name: "run_refactor_action",
+        description: "Executes a selected refactor action at a position.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to refactor",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                position: {
+                    type: "object",
+                    description: "Position to request refactors",
+                    properties: {
+                        line: { type: "number" },
+                        character: { type: "number" }
+                    },
+                    required: ["line", "character"]
+                },
+                range: {
+                    type: "object",
+                    description: "Optional range to scope the refactor",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    }
+                },
+                kind: {
+                    type: "string",
+                    description: "Optional CodeActionKind to match a specific action"
+                },
+                title: {
+                    type: "string",
+                    description: "Title of the refactor action to execute"
+                }
+            },
+            required: ["textDocument", "position", "title"]
+        }
+    },
+    {
+        name: "get_workspace_diagnostics",
+        description: "Returns diagnostic information for all files in the workspace (errors, warnings, etc.).",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "get_file_diagnostics",
+        description: "Returns diagnostic information for a specific file.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to inspect",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "get_open_files",
+        description: "Returns currently open editors in the workspace, indicating the active editor and its cursor position.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "read_file_safe",
+        description: "Safely reads a file from the workspace.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to read",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "apply_patch_review",
+        description: "Applies a unified diff patch to a file with a diff preview and review queue.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to patch",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                patch: {
+                    type: "string",
+                    description: "Unified diff patch content"
+                }
+            },
+            required: ["textDocument", "patch"]
+        }
     }
 ];
 
@@ -871,5 +1297,344 @@ export const toolsDescriptions = [
     {
         name: "get_workspace_symbols",
         description: "Search for symbols across the workspace"
+    },
+    {
+        name: "list_formatters",
+        description: "List available formatters for a document"
+    },
+    {
+        name: "format_document",
+        description: "Format a document using the default or a chosen formatter"
+    },
+    {
+        name: "run_terminal_command",
+        description: "Execute a shell command and capture output"
+    },
+    {
+        name: "search_regex",
+        description: "Regex search with context across the workspace"
+    },
+    {
+        name: "list_files",
+        description: "List workspace files (common ignores applied)"
+    },
+    {
+        name: "summarize_definitions",
+        description: "Summarize document definitions via document symbols"
+    },
+    {
+        name: "list_source_actions",
+        description: "List available source actions for a document/range"
+    },
+    {
+        name: "run_source_action",
+        description: "Execute a chosen source action"
+    },
+    {
+        name: "list_refactor_actions",
+        description: "List available refactor actions at a position"
+    },
+    {
+        name: "run_refactor_action",
+        description: "Execute a chosen refactor action"
+    },
+    {
+        name: "get_workspace_diagnostics",
+        description: "Get diagnostic information for the workspace (per-file problems with severities)."
+    },
+    {
+        name: "get_file_diagnostics",
+        description: "Get diagnostic information for a specific file."
+    },
+    {
+        name: "get_open_files",
+        description: "List currently open editors, marking the active one and cursor positions."
+    },
+    {
+        name: "read_file_safe",
+        description: "Safely read file contents from the workspace."
+    },
+    {
+        name: "apply_patch_review",
+        description: "Queue a unified diff patch with diff preview and review controls."
+    },
+    {
+        name: "copy_file",
+        description: "Copy a file within the workspace.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                source: { type: "string", description: "URI of the source file" },
+                destination: { type: "string", description: "URI of the destination file" }
+            },
+            required: ["source", "destination"]
+        }
+    },
+    {
+        name: "move_file",
+        description: "Move/rename a file within the workspace (requires user confirmation).",
+        inputSchema: {
+            type: "object",
+            properties: {
+                source: { type: "string", description: "URI of the source file" },
+                destination: { type: "string", description: "URI of the destination file" }
+            },
+            required: ["source", "destination"]
+        }
+    },
+    {
+        name: "delete_file",
+        description: "Delete a file in the workspace (requires user confirmation).",
+        inputSchema: {
+            type: "object",
+            properties: {
+                uri: { type: "string", description: "URI of the file to delete" }
+            },
+            required: ["uri"]
+        }
+    },
+    {
+        name: "prompt_user_choice",
+        description: "Ask the user a question with multiple button choices via VS Code notification.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                message: { type: "string", description: "Question to ask the user" },
+                choices: {
+                    type: "array",
+                    description: "Buttons to present",
+                    items: { type: "string" },
+                    minItems: 1
+                }
+            },
+            required: ["message", "choices"]
+        }
+    },
+    {
+        name: "list_tests",
+        description: "Lists available test tasks in the workspace."
+    },
+    {
+        name: "run_test",
+        description: "Runs a selected test task and returns its result.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: {
+                    type: "string",
+                    description: "Name of the test task to run"
+                }
+            },
+            required: ["name"]
+        }
+    },
+    {
+        name: "run_all_tests",
+        description: "Runs all test tasks in the workspace and returns their results."
+    },
+    {
+        name: "get_last_test_results",
+        description: "Returns the most recent test task results gathered by run_test or run_all_tests."
+    },
+    {
+        name: "insert_lines",
+        description: "Insert lines into a file at a specific line number.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to edit",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                line: {
+                    type: "number",
+                    description: "Zero-based line number to insert before"
+                },
+                lines: {
+                    type: "array",
+                    description: "Lines to insert",
+                    items: { type: "string" }
+                }
+            },
+            required: ["textDocument", "line", "lines"]
+        }
+    },
+    {
+        name: "remove_lines",
+        description: "Remove a range of lines from a file.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to edit",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                startLine: {
+                    type: "number",
+                    description: "Zero-based start line (inclusive)"
+                },
+                endLine: {
+                    type: "number",
+                    description: "Zero-based end line (exclusive)"
+                }
+            },
+            required: ["textDocument", "startLine", "endLine"]
+        }
+    },
+    {
+        name: "replace_lines",
+        description: "Replace a range of lines with new content.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to edit",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                startLine: {
+                    type: "number",
+                    description: "Zero-based start line (inclusive)"
+                },
+                endLine: {
+                    type: "number",
+                    description: "Zero-based end line (exclusive)"
+                },
+                lines: {
+                    type: "array",
+                    description: "Replacement lines",
+                    items: { type: "string" }
+                }
+            },
+            required: ["textDocument", "startLine", "endLine", "lines"]
+        }
+    },
+    {
+        name: "list_files_paginated",
+        description: "List workspace files with pagination and optional glob (can include ignored paths like node_modules).",
+        inputSchema: {
+            type: "object",
+            properties: {
+                glob: {
+                    type: "string",
+                    description: "Glob pattern to include (defaults to **/*)"
+                },
+                exclude: {
+                    type: "string",
+                    description: "Optional glob to exclude (e.g., **/.git/**)"
+                },
+                page: {
+                    type: "number",
+                    description: "Page number (1-based, default 1)"
+                },
+                pageSize: {
+                    type: "number",
+                    description: "Items per page (default 100)"
+                }
+            }
+        }
+    },
+    {
+        name: "get_workspace_tree",
+        description: "Returns a shallow tree view of the workspace, marking ignored entries.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                maxEntries: {
+                    type: "number",
+                    description: "Maximum entries to return (default 200)"
+                }
+            }
+        }
+    },
+    {
+        name: "list_tests",
+        description: "Lists available test tasks in the workspace.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "run_test",
+        description: "Runs a selected test task and returns its result.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: {
+                    type: "string",
+                    description: "Name of the test task to run"
+                }
+            },
+            required: ["name"]
+        }
+    },
+    {
+        name: "run_all_tests",
+        description: "Runs all test tasks in the workspace and returns their results.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "get_last_test_results",
+        description: "Returns the most recent test task results gathered by run_test or run_all_tests.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "read_range",
+        description: "Read a specific line/character range from a file.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to read",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                range: {
+                    type: "object",
+                    description: "Range to read",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    },
+                    required: ["start", "end"]
+                }
+            },
+            required: ["textDocument", "range"]
+        }
     }
 ];
