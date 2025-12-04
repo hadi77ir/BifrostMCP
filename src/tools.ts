@@ -1199,6 +1199,14 @@ export const mcpTools = [
         }
     },
     {
+        name: "get_selected_code",
+        description: "Returns selections and their text from visible editor tabs.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
         name: "open_file",
         description: "Opens a file and makes it the active editor tab.",
         inputSchema: {
@@ -1944,6 +1952,7 @@ const toolShortDescriptions: Record<string, string> = {
     "get_workspace_diagnostics": "Get diagnostic information for the workspace",
     "get_file_diagnostics": "Get diagnostic information for a specific file",
     "get_open_files": "List currently open editors and selections",
+    "get_selected_code": "Return selections and their text from visible editors",
     "open_file": "Open a file and make it the active editor tab",
     "save_file": "Save an opened file if it is dirty",
     "close_file": "Close an opened file tab",

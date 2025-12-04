@@ -211,6 +211,33 @@ suite('New MCP tools', () => {
         }
     }).timeout(15000);
 
+    test('get_selected_code returns selections with text', async () => {
+        const uri = await createTempFile('tmp-selected-code.ts', 'const foo = 1;\nconst bar = foo + 1;\n');
+        try {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const editor = await vscode.window.showTextDocument(doc, { preview: false });
+            const lineText = doc.lineAt(1).text;
+            const startCol = lineText.indexOf('foo');
+            const endCol = startCol + 'foo + 1'.length;
+            editor.selections = [
+                new vscode.Selection(
+                    new vscode.Position(1, startCol),
+                    new vscode.Position(1, endCol)
+                )
+            ];
+
+            const result = await runTool('get_selected_code', {}) as any[];
+            assert.ok(Array.isArray(result), 'Expected array of entries');
+            const entry = result.find(e => e.uri === uri.toString());
+            assert.ok(entry, 'Expected entry for opened file');
+            const selection = entry.selections.find((s: any) => s.text === 'foo + 1');
+            assert.ok(selection, 'Expected selection text to be captured');
+            assert.strictEqual(selection.isEmpty, false, 'Selection should not be empty');
+        } finally {
+            await deleteTempFile(uri);
+        }
+    }).timeout(15000);
+
     test('open_file opens and focuses document', async () => {
         const uri = await createTempFile('tmp-open-file.ts', 'const q = 2;\n');
         try {

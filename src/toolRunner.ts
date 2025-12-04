@@ -1120,6 +1120,86 @@ export const runTool = async (name: string, args: any) => {
             break;
         }
 
+        case "get_selected_code": {
+            const activeEditor = vscode.window.activeTextEditor;
+            const entries = new Map<string, {
+                uri: string;
+                isActive: boolean;
+                selections: {
+                    start: { line: number; character: number };
+                    end: { line: number; character: number };
+                    text: string;
+                    isEmpty: boolean;
+                }[];
+                viewColumn?: vscode.ViewColumn;
+            }>();
+
+            const upsertEntry = (uri: vscode.Uri, partial: Partial<{
+                isActive: boolean;
+                selections: {
+                    start: { line: number; character: number };
+                    end: { line: number; character: number };
+                    text: string;
+                    isEmpty: boolean;
+                }[];
+                viewColumn?: vscode.ViewColumn;
+            }>) => {
+                const key = uri.toString();
+                const existing = entries.get(key) ?? {
+                    uri: key,
+                    isActive: false,
+                    selections: [],
+                    viewColumn: undefined as vscode.ViewColumn | undefined
+                };
+                entries.set(key, {
+                    uri: key,
+                    isActive: existing.isActive || Boolean(partial.isActive),
+                    selections: partial.selections ?? existing.selections,
+                    viewColumn: existing.viewColumn ?? partial.viewColumn
+                });
+            };
+
+            for (const editor of vscode.window.visibleTextEditors) {
+                upsertEntry(editor.document.uri, {
+                    isActive: editor === activeEditor,
+                    viewColumn: editor.viewColumn ?? undefined,
+                    selections: editor.selections.map(sel => ({
+                        start: {
+                            line: sel.start.line,
+                            character: sel.start.character
+                        },
+                        end: {
+                            line: sel.end.line,
+                            character: sel.end.character
+                        },
+                        text: editor.document.getText(sel),
+                        isEmpty: sel.isEmpty
+                    }))
+                });
+            }
+
+            for (const group of vscode.window.tabGroups.all) {
+                for (const tab of group.tabs) {
+                    let tabUri: vscode.Uri | undefined;
+                    if (tab.input instanceof vscode.TabInputText) {
+                        tabUri = tab.input.uri;
+                    } else if (tab.input instanceof vscode.TabInputTextDiff) {
+                        tabUri = tab.input.modified;
+                    }
+                    if (!tabUri) {
+                        continue;
+                    }
+                    upsertEntry(tabUri, {
+                        isActive: tab.isActive,
+                        viewColumn: group.viewColumn ?? undefined
+                    });
+                }
+            }
+
+            result = Array.from(entries.values());
+            break;
+        }
+
         case "open_file": {
             const targetUri = args?.textDocument?.uri
                 ? vscode.Uri.parse(args.textDocument.uri)

@@ -232,7 +232,7 @@ This maintains compatibility with existing configurations and tools.
 
 ## Available Tools
 
-The MCP server exposes 82 tools:
+The MCP server exposes 83 tools:
 
 - **find_usages** — Find all references to a symbol
 - **go_to_definition** — Find definition of a symbol
@@ -267,6 +267,7 @@ The MCP server exposes 82 tools:
 - **get_workspace_diagnostics** — Get diagnostic information for the workspace
 - **get_file_diagnostics** — Get diagnostic information for a specific file
 - **get_open_files** — List currently open editors and selections
+- **get_selected_code** — Return selections and their text from visible editors
 - **open_file** — Open a file and make it the active editor tab
 - **save_file** — Save an opened file if it is dirty
 - **close_file** — Close an opened file tab
