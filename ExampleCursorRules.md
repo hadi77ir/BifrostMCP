@@ -1,138 +1,51 @@
-# Cursor Agent Rules for Code Modification
+# Example Cursor Rules and Bifrost Tooling
 
-## 1. Pre-Edit Analysis Requirements
-BEFORE making any code changes, MUST:
-- Use `mcp__get_document_symbols` on the target file to understand its structure
-- Use `mcp__find_usages` on any symbol being modified to identify all affected locations
-- Use `mcp__get_type_definition` and/or `mcp__go_to_definition` for any types or symbols being modified
-- Use `mcp__get_hover_info` to verify function signatures and type information
+Practical guidance for using Bifrost tools the way we typically do during edits.
 
-## 2. Impact Analysis Rules
-BEFORE proceeding with changes:
-1. If `mcp__find_usages` reveals usage in multiple files:
-   - Must analyze each usage context
-   - Must verify type compatibility across all uses
-   - Must plan changes for all affected locations
+## Goals
+- Keep tool calls small and purposeful; gather only the context you need.
+- Use semantic queries when they add value; avoid over-querying the workspace.
+- Favor readable diffs for hand edits; use commands/tasks for generated output.
 
-2. If modifying interfaces or types:
-   - Must use `mcp__find_implementations` to locate all implementations
-   - Must ensure changes won't break implementing classes
-   - Must verify backward compatibility or plan updates for all implementations
+## Core Patterns (with sample calls)
+- File context: `mcp__Bifrost__read_file_safe({"textDocument":{"uri":"/repo/path/file.ts"}})` or `mcp__Bifrost__read_range` for big files.
+- Structure: `mcp__Bifrost__get_document_symbols({"textDocument":{"uri":"/repo/path/file.ts"}})` to see the outline before diving in.
+- Navigation: `mcp__Bifrost__move_cursor({"textDocument":{"uri":"/repo/path/file.ts"},"searchString":"functionName"})` to jump to a spot; use `get_cursor_context` tags to return later.
+- Symbol inspection: `mcp__Bifrost__get_hover_info` to confirm signatures, `mcp__Bifrost__go_to_definition` for sources, `mcp__Bifrost__get_type_definition` for underlying types.
+- Impact checks: `mcp__Bifrost__find_usages` when changing an API, `mcp__Bifrost__find_implementations` for interfaces/abstracts, `mcp__Bifrost__get_call_hierarchy` for call chains.
+- Editing: prefer patching for single-file manual changes; avoid it for auto-generated output.
+- Validation: `mcp__Bifrost__get_file_diagnostics` (or `get_workspace_diagnostics`) after edits; run relevant tests with `mcp__Bifrost__run_test`/`run_all_tests` when available.
 
-## 3. Type Safety Rules
-MUST maintain type safety by:
-1. Using `mcp__get_type_definition` for:
-   - All modified parameters
-   - Return types
-   - Interface members
-   - Generic constraints
-
-2. Using `mcp__get_hover_info` to verify:
-   - Function signatures
-   - Type constraints
-   - Optional vs required properties
-
-## 4. Code Modification Sequence
-When making changes:
-1. First gather context:
-```typescript
-// Example sequence
-await mcp__get_document_symbols(file)
-await mcp__find_usages(symbol)
-await mcp__get_type_definition(symbol)
-await mcp__get_hover_info(symbol)
+## Example Flows
+- Small fix:
+```
+await mcp__Bifrost__read_range({textDocument:{uri:"/repo/file.ts"},range:{start:{line:20,character:0},end:{line:80,character:0}}})
+await mcp__Bifrost__get_hover_info({textDocument:{uri:"/repo/file.ts"},position:{line:42,character:5}}) // confirm signature
+// edit with apply_patch
+await mcp__Bifrost__get_file_diagnostics({textDocument:{uri:"/repo/file.ts"}})
 ```
 
-2. Then analyze impact:
-```typescript
-// For each usage found
-await mcp__get_hover_info(usage)
-await mcp__get_type_definition(relatedTypes)
+- Changing a function with callers:
+```
+await mcp__Bifrost__find_usages({textDocument:{uri:"/repo/file.ts"},position:{line:55,character:10}})
+await mcp__Bifrost__get_call_hierarchy({textDocument:{uri:"/repo/file.ts"},position:{line:55,character:10}}) // spot upstream/downstream impact
+// update callers surfaced by usages/hierarchy
+await mcp__Bifrost__get_hover_info({textDocument:{uri:"/repo/file.ts"},position:{line:55,character:10}}) // re-check types
 ```
 
-3. Only then use `edit_file`
-
-## 5. Post-Edit Verification
-After making changes:
-1. Use `mcp__get_document_symbols` to verify file structure remains valid
-2. Use `mcp__find_usages` to verify all usages are still compatible
-3. Use `mcp__get_hover_info` to verify new type signatures
-
-## 6. Special Cases
-
-### When Modifying React Components:
-1. Must use `mcp__find_usages` to:
-   - Find all component instances
-   - Verify prop usage
-   - Check for defaultProps and propTypes
-
-2. Must use `mcp__get_type_definition` for:
-   - Prop interfaces
-   - State types
-   - Context types
-
-### When Modifying APIs/Functions:
-1. Must use `mcp__get_call_hierarchy` to:
-   - Understand the call chain
-   - Identify dependent functions
-   - Verify changes won't break callers
-
-### When Modifying Types/Interfaces:
-1. Must use `mcp__find_implementations` to:
-   - Locate all implementing classes
-   - Verify compatibility
-   - Plan updates if needed
-
-## 7. Error Prevention Rules
-
-1. NEVER modify a symbol without first:
-```typescript
-await mcp__find_usages(symbol)
-await mcp__get_type_definition(symbol)
+- Modifying a type or interface:
+```
+await mcp__Bifrost__get_type_definition({textDocument:{uri:"/repo/types.ts"},position:{line:12,character:6}})
+await mcp__Bifrost__find_implementations({textDocument:{uri:"/repo/types.ts"},position:{line:12,character:6}})
+// adjust each implementation as needed
 ```
 
-2. NEVER modify a type without:
-```typescript
-await mcp__find_implementations(type)
-await mcp__get_hover_info(type)
-```
-
-3. NEVER modify a function signature without:
-```typescript
-await mcp__get_call_hierarchy(function)
-await mcp__find_usages(function)
-```
-
-## 8. Documentation Requirements
-
-When explaining changes, must reference:
-1. What tools were used to analyze the code
-2. What usages were found
-3. What type information was verified
-4. What impact analysis was performed
-
-Example:
-```markdown
-I analyzed the code using:
-1. mcp__find_usages to locate all 5 usages of handleSubmit
-2. mcp__get_type_definition to verify the function signature
-3. mcp__get_hover_info to check parameter types
-4. mcp__get_document_symbols to understand the component structure
-```
-
-## 9. Change Abort Conditions
-
-Must ABORT changes if:
-1. `mcp__find_usages` reveals unexpected usages
-2. `mcp__get_type_definition` shows incompatible types
-3. `mcp__find_implementations` shows breaking changes
-4. Unable to verify full impact using available tools
-
-## 10. Tool Priority Order
-
-When analyzing code, use tools in this order:
-1. `mcp__get_document_symbols` (understand structure)
-2. `mcp__find_usages` (understand impact)
-3. `mcp__get_type_definition` (verify types)
-4. `mcp__get_hover_info` (verify signatures)
-5. Additional tools as needed
+## Best Practices
+- Start with structure, then zoom in: `get_document_symbols` -> targeted `read_range`.
+- Use `move_cursor` with search strings or tags to keep context stable between edits.
+- Keep commands scoped; avoid fetching entire files if a range suffices.
+- Mention which tools informed your decisions when summarizing work.
+- Do not revert existing user changes; limit edits to what you intend to modify.
+- For large files, chain small `read_range` calls instead of dumping everything.
+- If a command fails or seems heavy, try a narrower query before retrying.
+- Run diagnostics or tests after behavior-changing edits and note any gaps if you cannot run them.
