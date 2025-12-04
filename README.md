@@ -12,6 +12,7 @@ This VS Code extension provides a Model Context Protocol (MCP) server that expos
 ## Table of Contents
 - [Features](#features)
 - [Installation/Usage](#usage)
+- [MCP Protocol Support](#mcp-protocol-support)
 - [Multi-Project Support](#multiple-project-support)
 - [Available Tools](#available-tools)
 - [Available Commands](#available-commands)
@@ -44,9 +45,16 @@ This VS Code extension provides a Model Context Protocol (MCP) server that expos
 The extension will automatically start an MCP server when activated. To configure an AI assistant to use this server:
 
 1. The server runs on port 8008 by default (configurable with `bifrost.config.json`)
-2. Configure your MCP-compatible AI assistant to connect to:
-   - SSE endpoint: `http://localhost:8008/sse`
-   - Message endpoint: `http://localhost:8008/message`
+2. Preferred (Streamable HTTP, MCP protocol 2025-03-26):
+   - Base endpoint: `http://localhost:8008/mcp`
+   - Initialize with POST, stream with GET (text/event-stream), send follow-up POSTs, end session with DELETE.
+3. Legacy (SSE, MCP protocol 2024-11-05):
+   - SSE stream: `http://localhost:8008/sse`
+   - Message endpoint: `http://localhost:8008/message?sessionId=<id>`
+
+### MCP Protocol Support
+- **Streamable HTTP (recommended)**: Full MCP 2025-03-26 support with resumable streaming and JSON responses; use the `/mcp` endpoint.
+- **Legacy SSE**: Maintained for older clients; use `/sse` and `/message?sessionId=<id>`.
 
 ### LLM Rules
 I have also provided sample rules that can be used in .cursorrules files for better results.
@@ -147,7 +155,7 @@ Create a `bifrost.config.json` file in your project root:
 ```
 
 The server will use this configuration to:
-- Create project-specific endpoints (e.g., `http://localhost:5642/my-project/sse`)
+- Create project-specific endpoints (e.g., `http://localhost:5642/my-project/mcp` for Streamable HTTP, `.../sse` for legacy)
 - Provide project information to AI assistants
 - Use a dedicated port for each project
 - Isolate project services from other running instances
@@ -194,10 +202,10 @@ Update your AI assistant configuration to use the project-specific endpoint and 
 {
   "mcpServers": {
     "BackendAPI": {
-      "url": "http://localhost:5643/backend-api/sse"
+      "url": "http://localhost:5643/backend-api/mcp"
     },
     "FrontendApp": {
-      "url": "http://localhost:5644/frontend-app/sse"
+      "url": "http://localhost:5644/frontend-app/mcp"
     }
   }
 }
@@ -207,6 +215,7 @@ Update your AI assistant configuration to use the project-specific endpoint and 
 
 If no `bifrost.config.json` is present, the server will use the default configuration:
 - Port: 8008
+- Streamable HTTP endpoint: `http://localhost:8008/mcp` (preferred)
 - SSE endpoint: `http://localhost:8008/sse`
 - Message endpoint: `http://localhost:8008/message`
 
@@ -214,27 +223,87 @@ This maintains compatibility with existing configurations and tools.
 
 ## Available Tools
 
-The extension provides access to many VSCode language features including:
+The MCP server exposes 79 tools:
 
-* **find\_usages**: Locate all symbol references.
-* **go\_to\_definition**: Jump to symbol definitions instantly.
-* **find\_implementations**: Discover implementations of interfaces/abstract methods.
-* **get\_hover\_info**: Get rich symbol docs on hover.
-* **get\_document\_symbols**: Outline all symbols in a file.
-* **get\_completions**: Context-aware auto-completions.
-* **get\_signature\_help**: Function parameter hints and overloads.
-* **get\_rename\_locations**: Safely get location of places to perform a rename across the project.
-* **rename**: Perform rename on a symbol
-* **get\_code\_actions**: Quick fixes, refactors, and improvements.
-* **get\_semantic\_tokens**: Enhanced highlighting data.
-* **get\_call\_hierarchy**: See incoming/outgoing call relationships.
-* **get\_type\_hierarchy**: Visualize class and interface inheritance.
-* **get\_code\_lens**: Inline insights (references, tests, etc.).
-* **get\_selection\_range**: Smart selection expansion for code blocks.
-* **get\_type\_definition**: Jump to underlying type definitions.
-* **get\_declaration**: Navigate to symbol declarations.
-* **get\_document\_highlights**: Highlight all occurrences of a symbol.
-* **get\_workspace\_symbols**: Search symbols across your entire workspace.
+- **find_usages** — Find all references to a symbol
+- **go_to_definition** — Find definition of a symbol
+- **find_implementations** — Find implementations of interface/abstract method
+- **get_hover_info** — Get hover information for a symbol
+- **get_document_symbols** — Get all symbols in document
+- **get_completions** — Get code completion suggestions at a position
+- **get_signature_help** — Get function signature information
+- **get_rename_locations** — Get all locations that would be affected by renaming a symbol
+- **rename** — Rename a symbol
+- **get_code_actions** — Get available code actions and refactorings
+- **get_semantic_tokens** — Get semantic token information for code understanding
+- **get_call_hierarchy** — Get incoming and outgoing call hierarchy
+- **get_type_hierarchy** — Get type hierarchy information
+- **get_code_lens** — Get CodeLens items inline with actionable info
+- **get_selection_range** — Get selection ranges for smart selection expansion
+- **get_type_definition** — Find type definitions of symbols
+- **get_declaration** — Find declarations of symbols
+- **get_document_highlights** — Find all highlights of a symbol in document
+- **get_workspace_symbols** — Search for symbols across the workspace
+- **list_formatters** — List available formatters for a document
+- **format_document** — Format a document using the default or a chosen formatter
+- **run_terminal_command** — Execute a shell command and capture output
+- **run_vscode_command** — Execute a VS Code command (requires approval)
+- **search_regex** — Regex search with context across the workspace
+- **list_files** — List workspace files (common ignores applied)
+- **summarize_definitions** — Summarize document definitions via document symbols
+- **list_source_actions** — List available source actions for a document/range
+- **run_source_action** — Execute a chosen source action
+- **list_refactor_actions** — List available refactor actions at a position
+- **run_refactor_action** — Execute a chosen refactor action on current symbol
+- **get_workspace_diagnostics** — Get diagnostic information for the workspace
+- **get_file_diagnostics** — Get diagnostic information for a specific file
+- **get_open_files** — List currently open editors and selections
+- **get_cursor_context** — Capture tagged context around the current cursor
+- **move_cursor** — Move the cursor to a position or text match in a file
+- **get_cursor_position** — Report the active cursor line/character
+- **read_file_safe** — Safely read file contents from the workspace
+- **read_range** — Read a specific line/character range from a file
+- **apply_patch_review** — Queue a unified diff patch with review controls
+- **insert_lines** — Insert lines into a file at a specific line number
+- **remove_lines** — Remove a range of lines from a file
+- **replace_lines** — Replace a range of lines with new content
+- **list_files_paginated** — List workspace files with pagination and optional glob
+- **get_workspace_tree** — Return a shallow tree view of the workspace
+- **copy_file** — Copy a file within the workspace
+- **move_file** — Move or rename a file within the workspace
+- **delete_file** — Delete a file in the workspace
+- **prompt_user_choice** — Ask the user a question with multiple choices
+- **list_tests** — List available test tasks in the workspace
+- **run_test** — Run a selected test task
+- **run_all_tests** — Run all test tasks in the workspace
+- **get_last_test_results** — Return the most recent test task results
+- **list_run_configurations** — List run/debug configurations from launch.json
+- **add_run_configuration** — Add a launch configuration
+- **update_run_configuration** — Update an existing launch configuration
+- **delete_run_configuration** — Delete a launch configuration by name
+- **start_debug_configuration** — Start a launch configuration with debugging
+- **start_no_debug_configuration** — Run a launch configuration without debugging
+- **list_build_tasks** — List build tasks from tasks.json
+- **add_build_task** — Add a build task to tasks.json
+- **update_build_task** — Update fields of a build task
+- **remove_build_task** — Remove a build task by label
+- **run_build_task** — Run a build task by label
+- **debug_status** — Report whether a debug session is active
+- **debug_stop** — Stop the active debug session
+- **debug_step_over** — Step over the next statement while debugging
+- **debug_step_into** — Step into the next function call
+- **debug_step_out** — Step out to the caller frame
+- **debug_continue** — Resume debugger execution
+- **debug_add_watch** — Add an expression to the debugger watch list
+- **debug_list_watches** — List all watched expressions
+- **debug_remove_watch** — Remove a watched expression
+- **debug_watch_values** — Evaluate watched expressions in the current frame
+- **debug_get_locals** — Inspect locals from the active debug frame
+- **debug_get_call_stack** — Show the current debug call stack
+- **debug_add_breakpoint** — Add a function or source breakpoint
+- **debug_remove_breakpoint** — Remove a function or line breakpoint
+- **debug_disable_all_breakpoints** — Disable all breakpoints without deleting them
+- **debug_remove_all_breakpoints** — Remove all breakpoints completely
 
 ## Requirements
 
@@ -243,10 +312,10 @@ The extension provides access to many VSCode language features including:
 
 ### Available Commands
 
-- `Bifrost MCP: Start Server` - Manually start the MCP server on port 8008
-- `Bifrost MCP: Start Server on port` - Manually start the MCP server on specified port
-- `Bifrost MCP: Stop Server` - Stop the running MCP server
-- `Bifrost MCP: Open Debug Panel` - Open the debug panel to test available tools
+- `Bifrost MCP: Start Server` - Start the MCP server with the current config (defaults to port 8008).
+- `Bifrost MCP: Start Server on Port` - Start the MCP server on a port you specify.
+- `Bifrost MCP: Stop Server` - Stop the running MCP server.
+- `Bifrost MCP: Open Debug Panel` - Open an in-editor panel to invoke and debug tools.
 
 ![image](https://raw.githubusercontent.com/biegehydra/BifrostMCP/refs/heads/master/src/images/commands.png)
 
