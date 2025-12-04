@@ -781,13 +781,21 @@ export const mcpTools = [
     },
     {
         name: "get_workspace_symbols",
-        description: "Searches for symbols across the entire workspace. This is useful for finding symbols by name across all files. Especially useful for finding the file and positions of a symbol to use in other tools.",
+        description: "Searches for symbols across the entire workspace. This is useful for finding symbols by name across all files. Especially useful for finding the file and positions of a symbol to use in other tools. Supports optional pagination via limit and page for large workspaces.",
         inputSchema: {
             type: "object",
             properties: {
                 query: {
                     type: "string",
                     description: "The search query for finding symbols"
+                },
+                limit: {
+                    type: "number",
+                    description: "Optional page size for results. When omitted, all symbols are returned."
+                },
+                page: {
+                    type: "number",
+                    description: "One-based page number when limit is provided."
                 }
             },
             required: ["query"]
@@ -1166,15 +1174,24 @@ export const mcpTools = [
     },
     {
         name: "get_workspace_diagnostics",
-        description: "Returns diagnostic information for all files in the workspace (errors, warnings, etc.).",
+        description: "Returns diagnostic information for all files in the workspace (errors, warnings, etc.). Supports optional pagination via limit and page to keep responses manageable.",
         inputSchema: {
             type: "object",
-            properties: {}
+            properties: {
+                limit: {
+                    type: "number",
+                    description: "Optional page size for diagnostics. When omitted, all problems are returned."
+                },
+                page: {
+                    type: "number",
+                    description: "One-based page number when limit is provided."
+                }
+            }
         }
     },
     {
         name: "get_file_diagnostics",
-        description: "Returns diagnostic information for a specific file.",
+        description: "Returns diagnostic information for a specific file. Supports optional pagination via limit and page to page through many problems.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1185,6 +1202,14 @@ export const mcpTools = [
                         uri: { type: "string" }
                     },
                     required: ["uri"]
+                },
+                limit: {
+                    type: "number",
+                    description: "Optional page size for diagnostics. When omitted, all problems are returned."
+                },
+                page: {
+                    type: "number",
+                    description: "One-based page number when limit is provided."
                 }
             },
             required: ["textDocument"]

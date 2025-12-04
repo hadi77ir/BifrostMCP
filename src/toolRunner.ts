@@ -155,6 +155,20 @@ const convertDiagnostic = (uri: vscode.Uri, diag: vscode.Diagnostic) => ({
     code: diag.code
 });
 
+const toPositiveInteger = (value: unknown): number | undefined => {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(num) || num <= 0) {
+        return undefined;
+    }
+    return Math.floor(num);
+};
+
+const normalizePagination = (args: any): { limit: number | undefined; page: number } => {
+    const limit = toPositiveInteger(args?.limit);
+    const page = toPositiveInteger(args?.page) ?? 1;
+    return { limit, page };
+};
+
 const applyLineEdit = async (
     uri: vscode.Uri,
     transform: (lines: string[]) => { next: string[], description: string }
@@ -556,13 +570,20 @@ export const runTool = async (name: string, args: any) => {
             }));
             break;
 
-        case "get_workspace_symbols":
+        case "get_workspace_symbols": {
             const query = args.query || '';
+            const { limit, page } = normalizePagination(args);
             const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
                 'vscode.executeWorkspaceSymbolProvider',
                 query
             );
-            result = symbols?.map(symbol => ({
+            const totalSymbols = symbols?.length ?? 0;
+            const safePage = Math.max(1, page);
+            const totalPages = limit ? Math.ceil(totalSymbols / limit) : (totalSymbols > 0 ? 1 : 0);
+            const slice = limit
+                ? symbols?.slice((safePage - 1) * limit, safePage * limit)
+                : symbols;
+            const entries = slice?.map(symbol => ({
                 name: symbol.name,
                 kind: symbol.kind,
                 location: {
@@ -579,8 +600,15 @@ export const runTool = async (name: string, args: any) => {
                     }
                 },
                 containerName: symbol.containerName
-            }));
+            })) ?? [];
+            result = Object.assign(entries, {
+                totalSymbols,
+                page: safePage,
+                totalPages,
+                limit: limit ?? null
+            });
             break;
+        }
 
         case "get_semantic_tokens":
             const semanticTokensUri = vscode.Uri.parse((args as any).textDocument?.uri);
@@ -1033,21 +1061,68 @@ export const runTool = async (name: string, args: any) => {
         }
 
         case "get_workspace_diagnostics": {
+            const { limit, page } = normalizePagination(args);
             const diagnostics = vscode.languages.getDiagnostics();
-            result = diagnostics.map(([dUri, diags]) => ({
-                uri: dUri.toString(),
-                hasIssues: diags.length > 0,
-                diagnostics: diags.map(d => convertDiagnostic(dUri, d))
-            }));
+            const totalDiagnostics = diagnostics.reduce((sum, [, diags]) => sum + diags.length, 0);
+            const safePage = Math.max(1, page);
+
+            if (!limit) {
+                const entries = diagnostics.map(([dUri, diags]) => ({
+                    uri: dUri.toString(),
+                    hasIssues: diags.length > 0,
+                    diagnostics: diags.map(d => convertDiagnostic(dUri, d))
+                }));
+                result = Object.assign(entries, {
+                    totalDiagnostics,
+                    page: safePage,
+                    totalPages: totalDiagnostics > 0 ? 1 : 0,
+                    limit: null
+                });
+                break;
+            }
+
+            const flat = diagnostics.flatMap(([dUri, diags]) =>
+                diags.map(diag => ({ uri: dUri, diag }))
+            );
+            const start = (safePage - 1) * limit;
+            const paged = flat.slice(start, start + limit);
+            const grouped = new Map<string, { uri: string; hasIssues: boolean; diagnostics: any[] }>();
+
+            for (const { uri: dUri, diag } of paged) {
+                const key = dUri.toString();
+                const existing = grouped.get(key) ?? { uri: key, hasIssues: false, diagnostics: [] as any[] };
+                existing.hasIssues = true;
+                existing.diagnostics.push(convertDiagnostic(dUri, diag));
+                grouped.set(key, existing);
+            }
+
+            const entries = Array.from(grouped.values());
+            const totalPages = totalDiagnostics === 0 ? 0 : Math.ceil(totalDiagnostics / limit);
+            result = Object.assign(entries, {
+                totalDiagnostics,
+                page: safePage,
+                totalPages,
+                limit
+            });
             break;
         }
 
         case "get_file_diagnostics": {
+            const { limit, page } = normalizePagination(args);
             const diags = vscode.languages.getDiagnostics(uri);
+            const totalDiagnostics = diags.length;
+            const safePage = Math.max(1, page);
+            const start = limit ? (safePage - 1) * limit : 0;
+            const slice = limit ? diags.slice(start, start + limit) : diags;
+            const totalPages = limit ? Math.ceil(totalDiagnostics / limit) : (totalDiagnostics > 0 ? 1 : 0);
             result = {
                 uri: uri.toString(),
-                hasIssues: diags.length > 0,
-                diagnostics: diags.map(d => convertDiagnostic(uri!, d))
+                hasIssues: totalDiagnostics > 0,
+                diagnostics: slice.map(d => convertDiagnostic(uri!, d)),
+                totalDiagnostics,
+                page: safePage,
+                totalPages,
+                limit: limit ?? null
             };
             break;
         }

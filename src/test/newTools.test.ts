@@ -425,4 +425,59 @@ suite('New MCP tools', () => {
             await deleteTempFile(uri);
         }
     }).timeout(15000);
+
+    test('get_file_diagnostics paginates diagnostics', async () => {
+        const uri = await createTempFile('tmp-diag-paged.ts', 'const a = 1;\nconst b = 2;\nconst c = 3;\n');
+        const collection = vscode.languages.createDiagnosticCollection('diag-paged');
+        try {
+            const diagnostics = [
+                new vscode.Diagnostic(new vscode.Range(new vscode.Position(0, 6), new vscode.Position(0, 7)), 'First', vscode.DiagnosticSeverity.Warning),
+                new vscode.Diagnostic(new vscode.Range(new vscode.Position(1, 6), new vscode.Position(1, 7)), 'Second', vscode.DiagnosticSeverity.Warning),
+                new vscode.Diagnostic(new vscode.Range(new vscode.Position(2, 6), new vscode.Position(2, 7)), 'Third', vscode.DiagnosticSeverity.Warning),
+            ];
+            collection.set(uri, diagnostics);
+
+            const page1 = await runTool('get_file_diagnostics', { textDocument: { uri: uri.toString() }, limit: 2, page: 1 }) as any;
+            const page2 = await runTool('get_file_diagnostics', { textDocument: { uri: uri.toString() }, limit: 2, page: 2 }) as any;
+
+            assert.strictEqual(page1.totalDiagnostics, 3, 'Should report total diagnostics');
+            assert.strictEqual(page1.totalPages, 2, 'Should compute total pages');
+            assert.strictEqual(page1.diagnostics.length, 2, 'First page should include two diagnostics');
+            assert.strictEqual(page2.diagnostics.length, 1, 'Second page should include remaining diagnostic');
+            assert.strictEqual(page2.page, 2, 'Second page metadata should reflect current page');
+        } finally {
+            collection.clear();
+            collection.dispose();
+            await deleteTempFile(uri);
+        }
+    }).timeout(15000);
+
+    test('get_workspace_diagnostics paginates workspace problems', async () => {
+        const uriA = await createTempFile('tmp-ws-diag-a.ts', 'const a = 1;\n');
+        const uriB = await createTempFile('tmp-ws-diag-b.ts', 'const b = 2;\n');
+        const collection = vscode.languages.createDiagnosticCollection('workspace-diag-paged');
+        try {
+            const diagA1 = new vscode.Diagnostic(new vscode.Range(new vscode.Position(0, 6), new vscode.Position(0, 7)), 'A1', vscode.DiagnosticSeverity.Information);
+            const diagA2 = new vscode.Diagnostic(new vscode.Range(new vscode.Position(0, 6), new vscode.Position(0, 7)), 'A2', vscode.DiagnosticSeverity.Warning);
+            const diagB1 = new vscode.Diagnostic(new vscode.Range(new vscode.Position(0, 6), new vscode.Position(0, 7)), 'B1', vscode.DiagnosticSeverity.Error);
+            const diagB2 = new vscode.Diagnostic(new vscode.Range(new vscode.Position(0, 6), new vscode.Position(0, 7)), 'B2', vscode.DiagnosticSeverity.Hint);
+            collection.set(uriA, [diagA1, diagA2]);
+            collection.set(uriB, [diagB1, diagB2]);
+
+            const page1 = await runTool('get_workspace_diagnostics', { limit: 3, page: 1 }) as any;
+            const page2 = await runTool('get_workspace_diagnostics', { limit: 3, page: 2 }) as any;
+            const countPage1 = page1.reduce((sum: number, entry: any) => sum + entry.diagnostics.length, 0);
+            const countPage2 = page2.reduce((sum: number, entry: any) => sum + entry.diagnostics.length, 0);
+
+            assert.strictEqual((page1 as any).totalDiagnostics, 4, 'Should report workspace total');
+            assert.strictEqual((page1 as any).totalPages, 2, 'Should compute total pages for workspace diagnostics');
+            assert.strictEqual(countPage1, 3, 'First page should contain three diagnostics');
+            assert.strictEqual(countPage2, 1, 'Second page should contain remaining diagnostic');
+        } finally {
+            collection.clear();
+            collection.dispose();
+            await deleteTempFile(uriA);
+            await deleteTempFile(uriB);
+        }
+    }).timeout(15000);
 });
