@@ -1,0 +1,14 @@
+{
+  "name": "sample-ts-workspace",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "npm run lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Sample (noop)",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/dist/index.js",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "name": "ScenarioDebug",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/index.ts"
+        },
+        {
+            "name": "ScenarioDebug",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/index.ts"
+        }
+    ]
+}

@@ -16,6 +16,8 @@ import { createDebugPanel } from './debugPanel';
 import { mcpServer, httpServer, setMcpServer, setHttpServer } from './globals';
 import { runTool } from './toolRunner';
 import { findBifrostConfig, BifrostConfig, getProjectBasePath } from './config';
+import { initializeReviewStatusBar } from './reviewManager';
+import { initializeModeSwitch } from './modeSwitch';
 
 export async function activate(context: vscode.ExtensionContext) {
     let currentConfig: BifrostConfig | null = null;
@@ -29,6 +31,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initial server start with config
     await restartServerWithConfig();
+
+    // Initialize patch review status UI
+    initializeReviewStatusBar(context);
+    // Initialize tool confirmation toggle
+    initializeModeSwitch(context);
 
     // Register debug panel command
     context.subscriptions.push(

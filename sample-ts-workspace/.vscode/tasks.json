@@ -1,0 +1,25 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "sample:lint",
+            "type": "shell",
+            "command": "npm run lint",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "sample:build",
+            "type": "shell",
+            "command": "npm run build",
+            "problemMatcher": []
+        },
+        {
+            "label": "sample:test",
+            "type": "shell",
+            "command": "npm test",
+            "group": "test",
+            "problemMatcher": []
+        }
+    ]
+}

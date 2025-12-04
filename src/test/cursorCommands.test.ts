@@ -8,11 +8,6 @@ interface SpecContext {
     cleanup?: () => Promise<void> | void;
 }
 
-const logResult = (name: string, result: any) => {
-    // eslint-disable-next-line no-console
-    console.log(`[cursor test][${name}]`, JSON.stringify(result, null, 2));
-};
-
 suite('Cursor-sensitive commands', () => {
     process.env.BIFROST_AUTO_APPROVE = '1';
     const repoRoot = vscode.Uri.file(path.resolve(__dirname, '..', '..'));
@@ -84,9 +79,10 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('find_usages', result);
                 assert.ok(Array.isArray(result) && result.length >= 1, 'Expected at least one usage');
-                assert.ok(result.every((r: any) => typeof r.uri === 'string'), 'Expected uri strings in results');
+                const indexUsage = result.find((r: any) => r.uri.endsWith('sample-ts-workspace/src/index.ts'));
+                assert.ok(indexUsage, 'Expected usage in index.ts');
+                assert.deepStrictEqual(indexUsage.range.start, { line: 5, character: 16 });
             }
         },
         {
@@ -96,9 +92,15 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('go_to_definition', result);
                 assert.ok(Array.isArray(result) && result.length > 0, 'Expected definition locations');
-                assert.ok(result.every((loc: any) => typeof loc.uri === 'string'), 'Definition results should have uri');
+                assert.deepStrictEqual(result[0], {
+                    uri: vscode.Uri.joinPath(sampleWorkspaceUri, 'src/index.ts').toString(),
+                    range: {
+                        start: { line: 5, character: 0 },
+                        end: { line: 9, character: 1 }
+                    },
+                    preview: "export function greet(name: string, options: GreeterOptions = {}): string {"
+                });
             }
         },
         {
@@ -108,9 +110,9 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('get_hover_info', result);
                 assert.ok(Array.isArray(result) && result.length > 0, 'Expected hover info');
-                assert.ok(result[0].contents.length > 0, 'Hover should include contents');
+                const contents = result[0].contents.join('');
+                assert.ok(contents.includes('greet(name: string'), 'Hover should include function signature');
             }
         },
         {
@@ -121,7 +123,6 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: uri.toString() }, position: pos }, cleanup: () => deleteIfExists(uri) };
             },
             verify: result => {
-                logResult('get_completions', result);
                 assert.ok(Array.isArray(result) && result.length > 0, 'Expected completion items');
                 assert.ok(result.some((item: any) => item.label === 'abs'), 'Expected Math.abs in completions');
             }
@@ -134,9 +135,9 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: uri.toString() }, position: pos }, cleanup: () => deleteIfExists(uri) };
             },
             verify: result => {
-                logResult('get_signature_help', result);
                 const signatures = Array.isArray(result) ? result : result?.signatures;
                 assert.ok(Array.isArray(signatures) && signatures.length > 0, 'Expected signatures');
+                assert.strictEqual(signatures[0].label, 'max(...values: number[]): number');
             }
         },
         {
@@ -147,9 +148,10 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: uri.toString() }, position: pos }, cleanup: () => deleteIfExists(uri) };
             },
             verify: result => {
-                logResult('get_rename_locations', result);
                 assert.ok(Array.isArray(result) && result.length >= 1, 'Expected rename locations');
-                assert.ok(result[0]?.edits?.length > 0, 'Expected edits for rename locations');
+                assert.strictEqual(result[0].uri.endsWith('tmp-rename-locs.ts'), true);
+                assert.strictEqual(result[0].edits.length, 2);
+                assert.ok(result[0].edits.every((e: any) => e.newText === 'newName'));
             }
         },
         {
@@ -160,22 +162,23 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: uri.toString() }, position: pos, newName: 'charlie' }, cleanup: () => deleteIfExists(uri) };
             },
             verify: result => {
-                logResult('rename', result);
                 assert.ok(result && result.isError === false, 'Expected rename command to respond without error');
             }
         },
         {
             name: 'get_code_actions',
             prepare: async () => {
-                const uri = await createTempFile('tmp-actions.ts', 'import { greet } from "./index";\n\nconsole.log("hi");\n');
+                const uri = await createTempFile('src/tmp-actions.ts', 'import { greet } from "./index";\n\nconsole.log("hi");\n');
                 const pos = { line: 0, character: 5 };
                 const doc = await vscode.workspace.openTextDocument(uri);
                 await vscode.window.showTextDocument(doc);
+                await doc.save();
+                await new Promise(resolve => setTimeout(resolve, 600));
                 return { args: { textDocument: { uri: uri.toString() }, position: pos }, cleanup: () => deleteIfExists(uri) };
             },
             verify: result => {
-                logResult('get_code_actions', result);
-                assert.ok(Array.isArray(result), 'Expected code actions array (may be empty depending on provider)');
+                assert.ok(Array.isArray(result) && result.length > 0, 'Expected code actions array');
+                assert.ok(result.some((a: any) => a.title === "Remove import from './index'"), 'Expected remove import quickfix');
             }
         },
         {
@@ -185,8 +188,15 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('get_selection_range', result);
                 assert.ok(Array.isArray(result) && result.length > 0, 'Expected selection ranges');
+                assert.deepStrictEqual(result[0].range, {
+                    start: { line: 2, character: 16 },
+                    end: { line: 2, character: 21 }
+                });
+                assert.deepStrictEqual(result[0].parent.range, {
+                    start: { line: 2, character: 16 },
+                    end: { line: 2, character: 31 }
+                });
             }
         },
         {
@@ -196,8 +206,8 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('get_type_definition', result);
                 assert.ok(Array.isArray(result) && result.length > 0, 'Expected type definition locations');
+                assert.strictEqual(result[0].uri, vscode.Uri.joinPath(sampleWorkspaceUri, 'src/index.ts').toString());
             }
         },
         {
@@ -207,8 +217,8 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('get_declaration', result);
                 assert.ok(Array.isArray(result), 'Expected declaration results array');
+                assert.strictEqual(result.length, 0, 'Expected no separate declarations');
             }
         },
         {
@@ -218,8 +228,9 @@ suite('Cursor-sensitive commands', () => {
                 return { args: { textDocument: { uri: exampleUri.toString() }, position: pos } };
             },
             verify: result => {
-                logResult('get_document_highlights', result);
-                assert.ok(Array.isArray(result) && result.length > 0, 'Expected document highlights');
+                assert.ok(Array.isArray(result) && result.length === 2, 'Expected two highlights for greet');
+                assert.deepStrictEqual(result[0].range, { start: { line: 0, character: 18 }, end: { line: 0, character: 23 } });
+                assert.deepStrictEqual(result[1].range, { start: { line: 2, character: 16 }, end: { line: 2, character: 21 } });
             }
         }
     ];

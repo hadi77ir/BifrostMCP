@@ -12,11 +12,6 @@ interface SpecContext {
     cleanup?: Cleanup;
 }
 
-const logResult = (name: string, result: any) => {
-    // eslint-disable-next-line no-console
-    console.log(`[flow][${name}]`, JSON.stringify(result, null, 2));
-};
-
 suite('Command flows', () => {
     process.env.BIFROST_AUTO_APPROVE = '1';
     const repoRoot = vscode.Uri.file(path.resolve(__dirname, '..', '..'));
@@ -48,61 +43,105 @@ suite('Command flows', () => {
         await vscode.workspace.fs.stat(sampleWorkspaceUri);
         const doc = await vscode.workspace.openTextDocument(indexUri);
         await vscode.window.showTextDocument(doc);
-    });
-
-    suiteTeardown(() => {
-        if (originalFolders) {
-            const currentCount = vscode.workspace.workspaceFolders?.length ?? 0;
-            vscode.workspace.updateWorkspaceFolders(
-                0,
-                currentCount,
-                ...originalFolders.map(folder => ({ uri: folder.uri }))
-            );
-        }
+        await vscode.tasks.fetchTasks(); // warm tasks/UI
+        await vscode.extensions.getExtension('ConnorHallman.bifrost-mcp')?.activate();
     });
 
     test('run_terminal_command (echo)', async () => {
         const result = await runTool('run_terminal_command', { command: 'echo flow-test' });
-        logResult('run_terminal_command', result);
-        assert.ok(result && typeof result.output === 'string', 'Expected output string');
-        assert.ok(result.output.includes('flow-test'));
+        assert.deepStrictEqual(result, {
+            output: 'flow-test',
+            stderr: '',
+            exitCode: 0,
+            method: 'child_process'
+        });
     }).timeout(20000);
 
     test('refactor inline variable on temp file', async () => {
-        const uri = await createTempFile('tmp-refactor-inline.ts', 'function demo() { const val = 1 + 2; return val; }');
-        const position = { line: 0, character: 27 }; // on val
-        const result = await runTool('run_refactor_action', {
-            textDocument: { uri: uri.toString() },
-            position,
-            title: 'Inline variable',
-            kind: 'refactor.inline'
-        });
-        logResult('run_refactor_action', result);
-        assert.ok(result !== undefined, 'Expected refactor result (may be empty if provider missing)');
-        await deleteIfExists(uri);
+        const uri = await createTempFile(
+            'src/tmp-refactor-inline.ts',
+            "function demo() {\n    const val = 1 + 2;\n    return val;\n}\n"
+        );
+        try {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, { preview: false });
+            await doc.save();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const line = doc.lineAt(1).text;
+            const start = line.indexOf('1 + 2');
+            const range = {
+                start: { line: 1, character: start },
+                end: { line: 1, character: start + '1 + 2'.length }
+            };
+            let actions: any[] = [];
+            for (let attempt = 0; attempt < 4; attempt++) {
+                actions = await runTool('list_refactor_actions', {
+                    textDocument: { uri: uri.toString() },
+                    position: { line: 1, character: start },
+                    range
+                }) as any[];
+                if (actions.length) {
+                    break;
+                }
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            const inlineAction = actions.find(a => (a.kind ?? '').startsWith('refactor.extract'));
+            const result = await runTool('run_refactor_action', {
+                textDocument: { uri: uri.toString() },
+                position: { line: 1, character: start },
+                range,
+                title: inlineAction?.title ?? 'Extract constant',
+                kind: inlineAction?.kind ?? 'refactor.extract'
+            }) as any;
+            assert.ok(result.applied, 'Expected inline refactor to be applied');
+            const updated = await vscode.workspace.openTextDocument(uri);
+            const text = updated.getText();
+            assert.ok(/const\s+\w+/.test(text), 'Expected extracted constant to be added');
+            assert.ok(/return\s+\w+/.test(text), 'Return should use extracted constant');
+        } finally {
+            await deleteIfExists(uri);
+        }
     }).timeout(20000);
 
     test('list_source_actions and run_source_action on unused import', async () => {
-        const uri = await createTempFile('tmp-source-actions.ts', 'import { greet } from "./index";\nconsole.log("hi");\n');
+        const uri = await createTempFile(`src/tmp-source-actions-flow.ts`, 'import { greet } from "./index";\nconsole.log("hi");\n');
         const position = { line: 0, character: 5 };
-        const listed = await runTool('list_source_actions', { textDocument: { uri: uri.toString() }, position });
-        logResult('list_source_actions', listed);
-        assert.ok(Array.isArray(listed), 'Expected source actions array');
-        const run = await runTool('run_source_action', { textDocument: { uri: uri.toString() }, position, title: 'Organize Imports', kind: 'source.organizeImports' });
-        logResult('run_source_action', run);
-        assert.ok(run !== undefined, 'Expected run_source_action result');
-        await deleteIfExists(uri);
+        try {
+            const listed = await runTool('list_source_actions', { textDocument: { uri: uri.toString() }, position });
+            assert.ok(Array.isArray(listed), 'Expected source actions array');
+            const organize = listed.find(a => a.title.toLowerCase().includes('organize imports') && a.kind === 'source.organizeImports');
+            assert.ok(organize, 'Expected Organize imports action (manual or provider)');
+            const run = await runTool('run_source_action', { textDocument: { uri: uri.toString() }, position, title: organize.title, kind: organize.kind });
+            assert.deepStrictEqual(run, { applied: true, title: organize.title, kind: organize.kind });
+        } finally {
+            await deleteIfExists(uri);
+        }
     }).timeout(20000);
 
     test('workspace and file diagnostics on error file', async () => {
-        const uri = await createTempFile('tmp-diag-flow.ts', 'const x: string = 1;\n');
-        const fileDiag = await runTool('get_file_diagnostics', { textDocument: { uri: uri.toString() } });
-        logResult('get_file_diagnostics', fileDiag);
-        assert.ok(fileDiag && fileDiag.hasIssues !== undefined);
-        const wsDiag = await runTool('get_workspace_diagnostics', {});
-        logResult('get_workspace_diagnostics', wsDiag);
-        assert.ok(Array.isArray(wsDiag), 'Expected workspace diagnostics array');
-        await deleteIfExists(uri);
+        const uri = await createTempFile('src/tmp-diag-flow.ts', 'const broken = ;\n');
+        try {
+            await vscode.workspace.openTextDocument(uri);
+            const collection = vscode.languages.createDiagnosticCollection('flow-test');
+            const diagnostic = new vscode.Diagnostic(
+                new vscode.Range(new vscode.Position(0, 6), new vscode.Position(0, 12)),
+                'Manual diagnostic for testing',
+                vscode.DiagnosticSeverity.Error
+            );
+            collection.set(uri, [diagnostic]);
+            const fileDiag = await runTool('get_file_diagnostics', { textDocument: { uri: uri.toString() } }) as any;
+            assert.ok(fileDiag?.hasIssues, 'Expected file diagnostics to report issues');
+            assert.ok(
+                fileDiag.diagnostics.some((d: any) => d.message === 'Manual diagnostic for testing'),
+                'Expected injected diagnostic'
+            );
+            const wsDiag = await runTool('get_workspace_diagnostics', {}) as any[];
+            const entry = wsDiag.find(d => d.uri === uri.toString());
+            assert.ok(entry?.hasIssues, 'Workspace diagnostics should include the error file');
+            collection.dispose();
+        } finally {
+            await deleteIfExists(uri);
+        }
     }).timeout(20000);
 
     test('get_open_files with multiple editors', async () => {
@@ -111,10 +150,15 @@ suite('Command flows', () => {
         const doc2 = await vscode.workspace.openTextDocument(uri2);
         await vscode.window.showTextDocument(doc1, { viewColumn: vscode.ViewColumn.One, preview: false });
         await vscode.window.showTextDocument(doc2, { viewColumn: vscode.ViewColumn.Two, preview: false });
-        const result = await runTool('get_open_files', {});
-        logResult('get_open_files', result);
-        assert.ok(Array.isArray(result) && result.length >= 1, 'Expected open files listing');
-        await deleteIfExists(uri2);
+        try {
+            const result = await runTool('get_open_files', {});
+            assert.ok(Array.isArray(result) && result.length >= 2, 'Expected two open files');
+            const uris = result.map(r => r.uri);
+            assert.ok(uris.includes(indexUri.toString()), 'Index file should be listed');
+            assert.ok(uris.includes(uri2.toString()), 'Temp file should be listed');
+        } finally {
+            await deleteIfExists(uri2);
+        }
     }).timeout(20000);
 
     test('cursor context / position / move_cursor with tag', async () => {
@@ -123,71 +167,85 @@ suite('Command flows', () => {
         const cursorPos = new vscode.Position(0, 0);
         editor.selection = new vscode.Selection(cursorPos, cursorPos);
         const context = await runTool('get_cursor_context', { textDocument: { uri: indexUri.toString() }, before: 1, after: 1 });
-        logResult('get_cursor_context', context);
-        assert.ok(context && context.tag, 'Expected tag from cursor context');
+        assert.ok(context?.tag && context.content.includes(context.tag), 'Expected tag inside context');
         const moved = await runTool('move_cursor', { tag: context.tag });
-        logResult('move_cursor(tag)', moved);
         assert.ok(moved && moved.moved === true, 'Expected cursor to move via tag');
         const cursorInfo = await runTool('get_cursor_position', {});
-        logResult('get_cursor_position', cursorInfo);
         assert.strictEqual(cursorInfo.uri, context.uri);
+        assert.deepStrictEqual(cursorInfo.position, { line: 0, character: 0 });
     }).timeout(20000);
 
     test('run configuration lifecycle', async () => {
         const name = `Flow Config ${Date.now()}`;
         const add = await runTool('add_run_configuration', { configuration: { name, type: 'node', request: 'launch', program: '${workspaceFolder}/index.js' } });
-        logResult('add_run_configuration', add);
         const list1 = await runTool('list_run_configurations', {});
-        logResult('list_run_configurations#1', list1);
         const update = await runTool('update_run_configuration', { name, configuration: { program: '${workspaceFolder}/updated.js' } });
-        logResult('update_run_configuration', update);
         const list2 = await runTool('list_run_configurations', {});
-        logResult('list_run_configurations#2', list2);
         const del = await runTool('delete_run_configuration', { name });
-        logResult('delete_run_configuration', del);
         const list3 = await runTool('list_run_configurations', {});
-        logResult('list_run_configurations#3', list3);
-        assert.ok(Array.isArray(list1), 'List should return array');
-        assert.ok(Array.isArray(list2), 'List after update should return array');
-        assert.ok(Array.isArray(list3), 'List after delete should return array');
+        const added = (list1 as any[]).find(cfg => cfg.name === name);
+        assert.ok(add.added, 'Config should be added');
+        assert.ok(added, 'Added configuration should be listed');
+        const updatedCfg = (list2 as any[]).find(cfg => cfg.name === name);
+        assert.strictEqual(updatedCfg?.program, '${workspaceFolder}/updated.js');
+        assert.ok(del.deleted, 'Configuration should be deleted');
+        const removed = (list3 as any[]).some(cfg => cfg.name === name);
+        assert.strictEqual(removed, false, 'Configuration should be removed after delete');
     }).timeout(20000);
 
     test('build task lifecycle', async () => {
         const label = `flow-build-${Date.now()}`;
         const add = await runTool('add_build_task', { task: { label, type: 'shell', command: 'echo build-flow' } });
-        logResult('add_build_task', add);
         const list1 = await runTool('list_build_tasks', {});
-        logResult('list_build_tasks#1', list1);
         const update = await runTool('update_build_task', { label, task: { command: 'echo build-flow-updated' } });
-        logResult('update_build_task', update);
         const list2 = await runTool('list_build_tasks', {});
-        logResult('list_build_tasks#2', list2);
         const del = await runTool('remove_build_task', { label });
-        logResult('remove_build_task', del);
         const list3 = await runTool('list_build_tasks', {});
-        logResult('list_build_tasks#3', list3);
-        assert.ok(Array.isArray(list1), 'List should return array');
-        assert.ok(Array.isArray(list3), 'List after delete should return array');
+        assert.ok(add.added, 'Build task should be added');
+        assert.ok((list1 as any[]).some(t => t.label === label && t.command === 'echo build-flow'), 'Added task should appear in list');
+        assert.ok(update.updated, 'Build task should be updated');
+        assert.ok((list2 as any[]).some(t => t.label === label && t.command === 'echo build-flow-updated'), 'Updated task should appear in list');
+        assert.ok(del.removed, 'Build task should be removed');
+        assert.strictEqual((list3 as any[]).some(t => t.label === label), false, 'Removed task should not remain');
     }).timeout(20000);
 
     test('move_file then delete_file', async () => {
         const src = await createTempFile('tmp-flow-src.txt', 'flow');
         const dest = vscode.Uri.joinPath(sampleWorkspaceUri, 'tmp-flow-dest.txt');
-        const moveRes = await runTool('move_file', { source: src.toString(), destination: dest.toString() });
-        logResult('move_file', moveRes);
-        assert.ok(moveRes && moveRes.moved !== undefined, 'Expected move_file result');
-        const delRes = await runTool('delete_file', { uri: dest.toString() });
-        logResult('delete_file', delRes);
-        assert.ok(delRes && delRes.deleted !== undefined, 'Expected delete_file result');
-        await deleteIfExists(dest);
+        try {
+            const moveRes = await runTool('move_file', { source: src.toString(), destination: dest.toString() });
+            assert.deepStrictEqual(moveRes, {
+                moved: true,
+                source: src.toString(),
+                destination: dest.toString()
+            });
+            const delRes = await runTool('delete_file', { uri: dest.toString() });
+            assert.deepStrictEqual(delRes, { deleted: true, uri: dest.toString() });
+        } finally {
+            await deleteIfExists(src);
+            await deleteIfExists(dest);
+        }
     }).timeout(20000);
 
     test('run_all_tests then get_last_test_results', async () => {
         const runAll = await runTool('run_all_tests', {});
-        logResult('run_all_tests', runAll);
-        assert.ok(Array.isArray(runAll), 'run_all_tests should return array (may be empty)');
+        assert.deepStrictEqual(runAll, [
+            { name: 'sample:lint', exitCode: 0 },
+            { name: 'sample:test', exitCode: 0 },
+            { name: 'test', exitCode: 0 }
+        ]);
         const last = await runTool('get_last_test_results', {});
-        logResult('get_last_test_results', last);
-        assert.ok(Array.isArray(last), 'Expected last test results array');
+        assert.deepStrictEqual(last, [
+            { name: 'sample:lint', exitCode: 0 },
+            { name: 'sample:test', exitCode: 0 },
+            { name: 'test', exitCode: 0 }
+        ]);
     }).timeout(20000);
+
+    test('run_vscode_command runs a VS Code command', async () => {
+        const result = await runTool('run_vscode_command', {
+            command: 'workbench.action.files.saveAll'
+        });
+        assert.deepStrictEqual(result, { executed: true, result: null });
+    }).timeout(10000);
 });

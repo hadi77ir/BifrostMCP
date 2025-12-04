@@ -893,6 +893,25 @@ export const mcpTools = [
         }
     },
     {
+        name: "run_vscode_command",
+        description: "Executes a VS Code command by id with optional arguments, only after explicit user approval. Use this for one-off invocations of built-in or extension commands (for example, saving all files or toggling UI state) when no dedicated MCP tool exists. Prefer more specific tools where possible; this is a general escape hatch. Returns the raw result from the VS Code command so callers can assert on outcomes.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                command: {
+                    type: "string",
+                    description: "VS Code command identifier (e.g., workbench.action.files.saveAll)"
+                },
+                args: {
+                    type: "array",
+                    description: "Optional positional arguments to pass to the command",
+                    items: {}
+                }
+            },
+            required: ["command"]
+        }
+    },
+    {
         name: "search_regex",
         description: "Performs a regex search across the workspace (or a specific folder), returning matches with surrounding context.",
         inputSchema: {
@@ -1180,8 +1199,86 @@ export const mcpTools = [
         }
     },
     {
+        name: "get_cursor_context",
+        description: "Returns a window of text around the current cursor and injects a random HTML-like tag at the exact cursor offset so you can jump back to it later. " +
+            "Use this to capture nearby code for analysis while remembering the precise cursor location; pair the returned tag with move_cursor for deterministic navigation.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "Optional document to read context from; defaults to active editor",
+                    properties: {
+                        uri: { type: "string" }
+                    }
+                },
+                before: {
+                    type: "number",
+                    description: "How many lines above the cursor to include",
+                    default: 3
+                },
+                after: {
+                    type: "number",
+                    description: "How many lines below the cursor to include",
+                    default: 3
+                }
+            }
+        }
+    },
+    {
+        name: "move_cursor",
+        description: "Moves the cursor in a document either to a specific line/character position, to a generated cursor tag (e.g., <cursor-abc123>), or to the first occurrence of a string. " +
+            "Use this to programmatically focus the editor on a target location before performing follow-up actions (like edits or inspections). " +
+            "You can provide an explicit position for deterministic jumps, a tag returned by get_cursor_context, or a search string to navigate to the first (or nth) match in the file. " +
+            "The command opens the document if needed, updates the active selection, and reveals the position in the editor so you can immediately read or edit nearby code. " +
+            "Prefer this over manual navigation when driving automated reviews, scripted refactors, or guided debugging flows.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "Optional document whose cursor should be moved",
+                    properties: {
+                        uri: { type: "string" }
+                    }
+                },
+                position: {
+                    type: "object",
+                    description: "Exact zero-based position to move the cursor to (preferred for deterministic jumps)",
+                    properties: {
+                        line: { type: "number" },
+                        character: { type: "number" }
+                    },
+                    required: ["line", "character"]
+                },
+                searchString: {
+                    type: "string",
+                    description: "If provided, moves the cursor to the first match of this string (or the nth match via occurrence)"
+                },
+                occurrence: {
+                    type: "number",
+                    description: "When using searchString, which occurrence to jump to (1-based, defaults to 1)",
+                    default: 1
+                },
+                tag: {
+                    type: "string",
+                    description: "Optional cursor tag emitted by get_cursor_context to jump back to that precise location"
+                }
+            },
+            required: []
+        }
+    },
+    {
+        name: "get_cursor_position",
+        description: "Reports the current cursor position (line and character) in the active editor along with the document URI. Use this to confirm navigation or chain position-based commands.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
         name: "read_file_safe",
-        description: "Safely reads a file from the workspace.",
+        description: "Safely reads a file from the workspace without mutating it. Returns the URI, language identifier, and raw content so you can reason about the file before editing. Use this for read-only context or when validating a file exists prior to other actions.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1198,8 +1295,49 @@ export const mcpTools = [
         }
     },
     {
+        name: "read_range",
+        description: "Reads a specific line and character range from a file so only the relevant snippet is retrieved. Ideal for large files where sending the whole file would be noisy or expensive. Prefer this over read_file_safe when you need a precise excerpt for review or follow-up tools.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to read",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                },
+                range: {
+                    type: "object",
+                    description: "Range to read (zero-based, end exclusive)",
+                    properties: {
+                        start: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        },
+                        end: {
+                            type: "object",
+                            properties: {
+                                line: { type: "number" },
+                                character: { type: "number" }
+                            },
+                            required: ["line", "character"]
+                        }
+                    },
+                    required: ["start", "end"]
+                }
+            },
+            required: ["textDocument", "range"]
+        }
+    },
+    {
         name: "apply_patch_review",
-        description: "Applies a unified diff patch to a file with a diff preview and review queue.",
+        description: "Applies a unified diff patch to a file while queuing it for review, ensuring changes can be inspected before they land. Useful for batching edits from multiple commands and keeping a clear audit trail. Prefer this over direct edits when you want a reversible, reviewable workflow.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1218,227 +1356,10 @@ export const mcpTools = [
             },
             required: ["textDocument", "patch"]
         }
-    }
-];
-
-export const toolsDescriptions = [
-    {
-        name: "find_usages",
-        description: "Find all references to a symbol"
-    },
-    {
-        name: "go_to_definition",
-        description: "Find definition of a symbol"
-    },
-    {
-        name: "find_implementations",
-        description: "Find implementations of interface/abstract method"
-    },
-    {
-        name: "get_hover_info",
-        description: "Get hover information for a symbol"
-    },
-    {
-        name: "get_document_symbols",
-        description: "Get all symbols in document"
-    },
-    {
-        name: "get_completions",
-        description: "Get code completion suggestions at a position"
-    },
-    {
-        name: "get_signature_help",
-        description: "Get function signature information"
-    },
-    {
-        name: "get_rename_locations",
-        description: "Get all locations that would be affected by renaming a symbol"
-    },
-    {
-        name: "rename",
-        description: "Rename a symbol"
-    },
-    {
-        name: "get_code_actions",
-        description: "Get available code actions and refactorings"
-    },
-    {
-        name: "get_semantic_tokens",
-        description: "Get semantic token information for code understanding"
-    },
-    {
-        name: "get_call_hierarchy",
-        description: "Get incoming and outgoing call hierarchy"
-    },
-    {
-        name: "get_type_hierarchy",
-        description: "Get type hierarchy information"
-    },
-    {
-        name: "get_code_lens",
-        description: "Gets CodeLens information for a document, showing actionable contextual information inline with code"
-    },
-    {
-        name: "get_selection_range",
-        description: "Gets selection ranges for smart selection expansion"
-    },
-    {
-        name: "get_type_definition",
-        description: "Find type definitions of symbols"
-    },
-    {
-        name: "get_declaration",
-        description: "Find declarations of symbols"
-    },
-    {
-        name: "get_document_highlights",
-        description: "Find all highlights of a symbol in document"
-    },
-    {
-        name: "get_workspace_symbols",
-        description: "Search for symbols across the workspace"
-    },
-    {
-        name: "list_formatters",
-        description: "List available formatters for a document"
-    },
-    {
-        name: "format_document",
-        description: "Format a document using the default or a chosen formatter"
-    },
-    {
-        name: "run_terminal_command",
-        description: "Execute a shell command and capture output"
-    },
-    {
-        name: "search_regex",
-        description: "Regex search with context across the workspace"
-    },
-    {
-        name: "list_files",
-        description: "List workspace files (common ignores applied)"
-    },
-    {
-        name: "summarize_definitions",
-        description: "Summarize document definitions via document symbols"
-    },
-    {
-        name: "list_source_actions",
-        description: "List available source actions for a document/range"
-    },
-    {
-        name: "run_source_action",
-        description: "Execute a chosen source action"
-    },
-    {
-        name: "list_refactor_actions",
-        description: "List available refactor actions at a position"
-    },
-    {
-        name: "run_refactor_action",
-        description: "Execute a chosen refactor action"
-    },
-    {
-        name: "get_workspace_diagnostics",
-        description: "Get diagnostic information for the workspace (per-file problems with severities)."
-    },
-    {
-        name: "get_file_diagnostics",
-        description: "Get diagnostic information for a specific file."
-    },
-    {
-        name: "get_open_files",
-        description: "List currently open editors, marking the active one and cursor positions."
-    },
-    {
-        name: "read_file_safe",
-        description: "Safely read file contents from the workspace."
-    },
-    {
-        name: "apply_patch_review",
-        description: "Queue a unified diff patch with diff preview and review controls."
-    },
-    {
-        name: "copy_file",
-        description: "Copy a file within the workspace.",
-        inputSchema: {
-            type: "object",
-            properties: {
-                source: { type: "string", description: "URI of the source file" },
-                destination: { type: "string", description: "URI of the destination file" }
-            },
-            required: ["source", "destination"]
-        }
-    },
-    {
-        name: "move_file",
-        description: "Move/rename a file within the workspace (requires user confirmation).",
-        inputSchema: {
-            type: "object",
-            properties: {
-                source: { type: "string", description: "URI of the source file" },
-                destination: { type: "string", description: "URI of the destination file" }
-            },
-            required: ["source", "destination"]
-        }
-    },
-    {
-        name: "delete_file",
-        description: "Delete a file in the workspace (requires user confirmation).",
-        inputSchema: {
-            type: "object",
-            properties: {
-                uri: { type: "string", description: "URI of the file to delete" }
-            },
-            required: ["uri"]
-        }
-    },
-    {
-        name: "prompt_user_choice",
-        description: "Ask the user a question with multiple button choices via VS Code notification.",
-        inputSchema: {
-            type: "object",
-            properties: {
-                message: { type: "string", description: "Question to ask the user" },
-                choices: {
-                    type: "array",
-                    description: "Buttons to present",
-                    items: { type: "string" },
-                    minItems: 1
-                }
-            },
-            required: ["message", "choices"]
-        }
-    },
-    {
-        name: "list_tests",
-        description: "Lists available test tasks in the workspace."
-    },
-    {
-        name: "run_test",
-        description: "Runs a selected test task and returns its result.",
-        inputSchema: {
-            type: "object",
-            properties: {
-                name: {
-                    type: "string",
-                    description: "Name of the test task to run"
-                }
-            },
-            required: ["name"]
-        }
-    },
-    {
-        name: "run_all_tests",
-        description: "Runs all test tasks in the workspace and returns their results."
-    },
-    {
-        name: "get_last_test_results",
-        description: "Returns the most recent test task results gathered by run_test or run_all_tests."
     },
     {
         name: "insert_lines",
-        description: "Insert lines into a file at a specific line number.",
+        description: "Inserts one or more lines at a specific zero-based index without disturbing the rest of the file. Useful for programmatically adding imports, configuration blocks, or scaffolding. Prefer this over replace_lines when you only need to add new content.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1465,7 +1386,7 @@ export const toolsDescriptions = [
     },
     {
         name: "remove_lines",
-        description: "Remove a range of lines from a file.",
+        description: "Removes a contiguous range of lines using zero-based offsets. Great for cleaning up dead code, generated sections, or redundant comments while preserving surrounding context. Prefer this when you want to drop content entirely instead of replacing it.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1491,7 +1412,7 @@ export const toolsDescriptions = [
     },
     {
         name: "replace_lines",
-        description: "Replace a range of lines with new content.",
+        description: "Replaces a range of lines with new content, enabling targeted patches without rewriting entire files. Use this for updating function bodies, config blocks, or docs while keeping the rest intact. Prefer this over separate remove/insert steps when transforming a block in one go.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1522,7 +1443,7 @@ export const toolsDescriptions = [
     },
     {
         name: "list_files_paginated",
-        description: "List workspace files with pagination and optional glob (can include ignored paths like node_modules).",
+        description: "Lists workspace files with pagination and optional glob filters so you can explore large repos safely. Helpful when you need to page through results or include normally ignored paths like node_modules. Prefer this over list_files when the project is huge or you need tighter scope control.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1547,7 +1468,7 @@ export const toolsDescriptions = [
     },
     {
         name: "get_workspace_tree",
-        description: "Returns a shallow tree view of the workspace, marking ignored entries.",
+        description: "Builds a shallow tree view of the workspace and marks entries that are normally ignored. Useful for quickly understanding folder structure and spotting hidden assets without traversing every file. Prefer this over flat lists when hierarchy matters.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1559,8 +1480,60 @@ export const toolsDescriptions = [
         }
     },
     {
+        name: "copy_file",
+        description: "Copies a file from one URI to another, overwriting if needed. Ideal for templating, backups, or duplicating examples before editing. Prefer this when you want to keep the original file intact instead of moving it.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                source: { type: "string", description: "URI of the source file" },
+                destination: { type: "string", description: "URI of the destination file" }
+            },
+            required: ["source", "destination"]
+        }
+    },
+    {
+        name: "move_file",
+        description: "Moves or renames a file to a new URI with overwrite support and safety prompts. Useful for refactors that relocate modules or assets. Prefer this over copy_file when the source should be removed after relocation.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                source: { type: "string", description: "URI of the source file" },
+                destination: { type: "string", description: "URI of the destination file" }
+            },
+            required: ["source", "destination"]
+        }
+    },
+    {
+        name: "delete_file",
+        description: "Deletes a file in the workspace (using the trash when available) with confirmation to avoid mistakes. Use this to clean up obsolete assets or generated artifacts safely.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                uri: { type: "string", description: "URI of the file to delete" }
+            },
+            required: ["uri"]
+        }
+    },
+    {
+        name: "prompt_user_choice",
+        description: "Displays a prompt with button choices and returns the user's selection, enabling interactive workflows. Use this to confirm risky actions or let the user pick between strategies.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                message: { type: "string", description: "Question to ask the user" },
+                choices: {
+                    type: "array",
+                    description: "Buttons to present",
+                    items: { type: "string" },
+                    minItems: 1
+                }
+            },
+            required: ["message", "choices"]
+        }
+    },
+    {
         name: "list_tests",
-        description: "Lists available test tasks in the workspace.",
+        description: "Enumerates VS Code tasks tagged as tests so you can see what suites are available. Helpful before kicking off targeted or full test runs.",
         inputSchema: {
             type: "object",
             properties: {}
@@ -1568,7 +1541,7 @@ export const toolsDescriptions = [
     },
     {
         name: "run_test",
-        description: "Runs a selected test task and returns its result.",
+        description: "Runs a named test task, waits for completion, and records the exit code. Use this for focused test runs or reproducing a specific suite without triggering everything.",
         inputSchema: {
             type: "object",
             properties: {
@@ -1582,7 +1555,7 @@ export const toolsDescriptions = [
     },
     {
         name: "run_all_tests",
-        description: "Runs all test tasks in the workspace and returns their results.",
+        description: "Executes all registered test tasks sequentially and returns their results. Ideal for full validation passes before a commit or release.",
         inputSchema: {
             type: "object",
             properties: {}
@@ -1590,51 +1563,382 @@ export const toolsDescriptions = [
     },
     {
         name: "get_last_test_results",
-        description: "Returns the most recent test task results gathered by run_test or run_all_tests.",
+        description: "Returns the most recent test task outcomes without rerunning them. Useful for surfacing results to the agent or UI after execution.",
         inputSchema: {
             type: "object",
             properties: {}
         }
     },
     {
-        name: "read_range",
-        description: "Read a specific line/character range from a file.",
+        name: "list_run_configurations",
+        description: "Reads .vscode/launch.json and lists available run/debug configurations. Use this to discover what launch targets exist before starting or editing them.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "add_run_configuration",
+        description: "Adds a new launch configuration (creating launch.json if needed) so the project gains a reusable debug/run target. Prefer this for programmatic setup of new scenarios.",
         inputSchema: {
             type: "object",
             properties: {
-                textDocument: {
+                configuration: {
                     type: "object",
-                    description: "The document to read",
+                    description: "Launch configuration to add",
                     properties: {
-                        uri: { type: "string" }
+                        name: { type: "string", description: "Name of the configuration" },
+                        type: { type: "string", description: "Debugger type (e.g., node, pwa-node)" },
+                        request: { type: "string", description: "Request type (launch or attach)" },
+                        program: { type: "string", description: "Entry point or program to run" }
                     },
-                    required: ["uri"]
-                },
-                range: {
-                    type: "object",
-                    description: "Range to read",
-                    properties: {
-                        start: {
-                            type: "object",
-                            properties: {
-                                line: { type: "number" },
-                                character: { type: "number" }
-                            },
-                            required: ["line", "character"]
-                        },
-                        end: {
-                            type: "object",
-                            properties: {
-                                line: { type: "number" },
-                                character: { type: "number" }
-                            },
-                            required: ["line", "character"]
-                        }
-                    },
-                    required: ["start", "end"]
+                    required: ["name"]
                 }
             },
-            required: ["textDocument", "range"]
+            required: ["configuration"]
+        }
+    },
+    {
+        name: "update_run_configuration",
+        description: "Updates fields of an existing launch configuration by name, merging partial changes. Use this to tweak args, env, or debugger settings without rebuilding the file manually.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name of the configuration to update" },
+                configuration: {
+                    type: "object",
+                    description: "Partial configuration fields to merge"
+                }
+            },
+            required: ["name", "configuration"]
+        }
+    },
+    {
+        name: "delete_run_configuration",
+        description: "Removes a launch configuration from launch.json by name to keep the list clean. Handy when deprecating old debug targets.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name of the configuration to delete" }
+            },
+            required: ["name"]
+        }
+    },
+    {
+        name: "start_debug_configuration",
+        description: "Starts a launch configuration with debugging enabled so breakpoints and watches are honored. Use when you need full debugging rather than a plain run.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name of the configuration to start" }
+            },
+            required: ["name"]
+        }
+    },
+    {
+        name: "start_no_debug_configuration",
+        description: "Runs a launch configuration without attaching the debugger, skipping breakpoint overhead. Ideal for quick executions when debugging is unnecessary.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name of the configuration to start without debugging" }
+            },
+            required: ["name"]
+        }
+    },
+    {
+        name: "list_build_tasks",
+        description: "Lists build tasks defined in .vscode/tasks.json so you can see available build pipelines. Useful prior to running or modifying tasks.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "add_build_task",
+        description: "Adds a build task definition to tasks.json, creating the file if needed. Prefer this when scaffolding build commands programmatically.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                task: {
+                    type: "object",
+                    description: "Task definition to add",
+                    properties: {
+                        label: { type: "string", description: "Display label for the task" },
+                        type: { type: "string", description: "Task type (e.g., shell, process, npm)" }
+                    },
+                    required: ["label"]
+                }
+            },
+            required: ["task"]
+        }
+    },
+    {
+        name: "update_build_task",
+        description: "Updates fields of an existing build task by label, merging provided values. Use this to refine commands or options without rewriting the entire tasks.json entry.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                label: { type: "string", description: "Label of the build task to update" },
+                task: {
+                    type: "object",
+                    description: "Partial task fields to merge"
+                }
+            },
+            required: ["label", "task"]
+        }
+    },
+    {
+        name: "remove_build_task",
+        description: "Removes a build task by label to retire obsolete build steps. Helps keep tasks.json lean.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                label: { type: "string", description: "Label of the build task to remove" }
+            },
+            required: ["label"]
+        }
+    },
+    {
+        name: "run_build_task",
+        description: "Runs a build task by label with confirmation and returns the exit code. Prefer this over run_terminal_command when you want to reuse VS Code task definitions and problem matchers.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                label: { type: "string", description: "Label of the build task to run" }
+            },
+            required: ["label"]
+        }
+    },
+    {
+        name: "debug_status",
+        description: "Reports whether a debug session is active and lists current sessions with their identifiers. Use this to gate debug operations or to surface session metadata to a client UI.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_stop",
+        description: "Stops the active debug session cleanly. Use this when you need to halt execution and tear down debugging state without closing VS Code. Prefer this over continuing or stepping when you want to end the session immediately.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_step_over",
+        description: "Debugger control to step over the next statement without entering functions. Useful for skimming high-level flow quickly.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_step_into",
+        description: "Steps into the next function call for detailed inspection. Prefer this when you need to analyze inner logic.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_step_out",
+        description: "Steps out of the current function back to the caller. Handy after inspecting nested code to resume higher-level debugging.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_continue",
+        description: "Resumes program execution until the next breakpoint or termination. Use after finishing inspections or adjusting watches.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_add_watch",
+        description: "Adds an expression to the watch list so its value is evaluated across debug steps. Prefer this to repeatedly inspecting locals when tracking a specific variable.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                expression: { type: "string", description: "Expression to watch" }
+            },
+            required: ["expression"]
+        }
+    },
+    {
+        name: "debug_list_watches",
+        description: "Lists all current watch expressions for review or sharing. Useful when coordinating debugging steps programmatically.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_remove_watch",
+        description: "Removes a watch expression to reduce noise in the watch list. Use this when an expression is no longer relevant.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                expression: { type: "string", description: "Expression to remove from the watch list" }
+            },
+            required: ["expression"]
+        }
+    },
+    {
+        name: "debug_watch_values",
+        description: "Evaluates all watch expressions against the current debug frame and returns values or errors. Great for quick state snapshots while stepping.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_get_locals",
+        description: "Retrieves local variables for the active debug frame, including scope information. Prefer this when you need a structured view of current state.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_get_call_stack",
+        description: "Returns the current call stack with function names and locations. Helpful for understanding execution context when a breakpoint hits.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_add_breakpoint",
+        description: "Adds a function or source-line breakpoint, supporting optional conditions and log messages. Use this to instrument code paths quickly without manual UI navigation.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                functionName: { type: "string", description: "Function name to break on" },
+                uri: { type: "string", description: "URI of the file for a source breakpoint" },
+                line: { type: "number", description: "Zero-based line for a source breakpoint" },
+                condition: { type: "string", description: "Optional breakpoint condition" },
+                logMessage: { type: "string", description: "Optional log message for tracepoints" }
+            }
+        }
+    },
+    {
+        name: "debug_remove_breakpoint",
+        description: "Removes breakpoints by function name or file/line so you stop pausing there. Useful for cleaning up targeted breakpoints after use.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                functionName: { type: "string", description: "Function breakpoint to remove" },
+                uri: { type: "string", description: "URI of the file for a source breakpoint" },
+                line: { type: "number", description: "Zero-based line for a source breakpoint" }
+            }
+        }
+    },
+    {
+        name: "debug_disable_all_breakpoints",
+        description: "Disables all breakpoints without deleting them. Prefer this when you want a clean run but plan to re-enable breakpoints later.",
+        inputSchema: {
+            type: "object",
+            properties: {}
+        }
+    },
+    {
+        name: "debug_remove_all_breakpoints",
+        description: "Completely removes every breakpoint for a fresh debugging state. Use this when resetting or before handing off the project.",
+        inputSchema: {
+            type: "object",
+            properties: {}
         }
     }
 ];
+
+const toolShortDescriptions: Record<string, string> = {
+    "find_usages": "Find all references to a symbol",
+    "go_to_definition": "Find definition of a symbol",
+    "find_implementations": "Find implementations of interface/abstract method",
+    "get_hover_info": "Get hover information for a symbol",
+    "get_document_symbols": "Get all symbols in document",
+    "get_completions": "Get code completion suggestions at a position",
+    "get_signature_help": "Get function signature information",
+    "get_rename_locations": "Get all locations that would be affected by renaming a symbol",
+    "rename": "Rename a symbol",
+    "get_code_actions": "Get available code actions and refactorings",
+    "get_semantic_tokens": "Get semantic token information for code understanding",
+    "get_call_hierarchy": "Get incoming and outgoing call hierarchy",
+    "get_type_hierarchy": "Get type hierarchy information",
+    "get_code_lens": "Get CodeLens items inline with actionable info",
+    "get_selection_range": "Get selection ranges for smart selection expansion",
+    "get_type_definition": "Find type definitions of symbols",
+    "get_declaration": "Find declarations of symbols",
+    "get_document_highlights": "Find all highlights of a symbol in document",
+    "get_workspace_symbols": "Search for symbols across the workspace",
+    "list_formatters": "List available formatters for a document",
+    "format_document": "Format a document using the default or a chosen formatter",
+    "run_terminal_command": "Execute a shell command and capture output",
+    "run_vscode_command": "Execute a VS Code command (requires approval)",
+    "search_regex": "Regex search with context across the workspace",
+    "list_files": "List workspace files (common ignores applied)",
+    "summarize_definitions": "Summarize document definitions via document symbols",
+    "list_source_actions": "List available source actions for a document/range",
+    "run_source_action": "Execute a chosen source action",
+    "list_refactor_actions": "List available refactor actions at a position",
+    "run_refactor_action": "Execute a chosen refactor action on current symbol",
+    "get_workspace_diagnostics": "Get diagnostic information for the workspace",
+    "get_file_diagnostics": "Get diagnostic information for a specific file",
+    "get_open_files": "List currently open editors and selections",
+    "get_cursor_context": "Capture tagged context around the current cursor",
+    "move_cursor": "Move the cursor to a position or text match in a file",
+    "get_cursor_position": "Report the active cursor line/character",
+    "read_file_safe": "Safely read file contents from the workspace",
+    "read_range": "Read a specific line/character range from a file",
+    "apply_patch_review": "Queue a unified diff patch with review controls",
+    "insert_lines": "Insert lines into a file at a specific line number",
+    "remove_lines": "Remove a range of lines from a file",
+    "replace_lines": "Replace a range of lines with new content",
+    "list_files_paginated": "List workspace files with pagination and optional glob",
+    "get_workspace_tree": "Return a shallow tree view of the workspace",
+    "copy_file": "Copy a file within the workspace",
+    "move_file": "Move or rename a file within the workspace",
+    "delete_file": "Delete a file in the workspace",
+    "prompt_user_choice": "Ask the user a question with multiple choices",
+    "list_tests": "List available test tasks in the workspace",
+    "run_test": "Run a selected test task",
+    "run_all_tests": "Run all test tasks in the workspace",
+    "get_last_test_results": "Return the most recent test task results",
+    "list_run_configurations": "List run/debug configurations from launch.json",
+    "add_run_configuration": "Add a launch configuration",
+    "update_run_configuration": "Update an existing launch configuration",
+    "delete_run_configuration": "Delete a launch configuration by name",
+    "start_debug_configuration": "Start a launch configuration with debugging",
+    "start_no_debug_configuration": "Run a launch configuration without debugging",
+    "list_build_tasks": "List build tasks from tasks.json",
+    "add_build_task": "Add a build task to tasks.json",
+    "update_build_task": "Update fields of a build task",
+    "remove_build_task": "Remove a build task by label",
+    "run_build_task": "Run a build task by label",
+    "debug_status": "Report whether a debug session is active",
+    "debug_stop": "Stop the active debug session",
+    "debug_step_over": "Step over the next statement while debugging",
+    "debug_step_into": "Step into the next function call",
+    "debug_step_out": "Step out to the caller frame",
+    "debug_continue": "Resume debugger execution",
+    "debug_add_watch": "Add an expression to the debugger watch list",
+    "debug_list_watches": "List all watched expressions",
+    "debug_remove_watch": "Remove a watched expression",
+    "debug_watch_values": "Evaluate watched expressions in the current frame",
+    "debug_get_locals": "Inspect locals from the active debug frame",
+    "debug_get_call_stack": "Show the current debug call stack",
+    "debug_add_breakpoint": "Add a function or source breakpoint",
+    "debug_remove_breakpoint": "Remove a function or line breakpoint",
+    "debug_disable_all_breakpoints": "Disable all breakpoints without deleting them",
+    "debug_remove_all_breakpoints": "Remove all breakpoints completely"
+};
+
+export const toolsDescriptions = mcpTools.map(tool => ({
+    name: tool.name,
+    description: toolShortDescriptions[tool.name] ?? "No description"
+}));
