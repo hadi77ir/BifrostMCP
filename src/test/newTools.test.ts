@@ -211,6 +211,63 @@ suite('New MCP tools', () => {
         }
     }).timeout(15000);
 
+    test('open_file opens and focuses document', async () => {
+        const uri = await createTempFile('tmp-open-file.ts', 'const q = 2;\n');
+        try {
+            const result = await runTool('open_file', { textDocument: { uri: uri.toString() } }) as any;
+            assert.ok(result.opened, 'Expected open_file to report opened');
+            assert.strictEqual(result.uri, uri.toString(), 'Expected returned uri to match');
+            assert.ok(result.isActive, 'Expected opened file to be active');
+        } finally {
+            await deleteTempFile(uri);
+        }
+    }).timeout(15000);
+
+    test('save_file saves dirty document', async () => {
+        const uri = await createTempFile('tmp-save-file.ts', 'const before = 1;\n');
+        try {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const editor = await vscode.window.showTextDocument(doc);
+            await editor.edit(edit => edit.insert(new vscode.Position(0, 0), '// dirty\n'));
+            assert.ok(doc.isDirty, 'Document should be dirty before save');
+
+            const result = await runTool('save_file', { textDocument: { uri: uri.toString() } }) as any;
+            assert.ok(result.saved, 'Expected save_file to report saved');
+            assert.ok(result.wasDirty, 'Expected wasDirty flag');
+            assert.ok(!doc.isDirty, 'Document should be clean after save');
+        } finally {
+            await deleteTempFile(uri);
+        }
+    }).timeout(15000);
+
+    test('close_file closes open tab', async () => {
+        const uri = await createTempFile('tmp-close-file.ts', 'const closeMe = true;\n');
+        try {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, { preview: false });
+
+            const result = await runTool('close_file', { textDocument: { uri: uri.toString() } }) as any;
+            assert.ok(result.closed, 'Expected close_file to report closed');
+
+            const stillOpenTab = vscode.window.tabGroups.all
+                .flatMap(group => group.tabs)
+                .find(tab => {
+                    const input = tab.input;
+                    if (input instanceof vscode.TabInputText) {
+                        return input.uri.toString() === uri.toString();
+                    }
+                    if (input instanceof vscode.TabInputTextDiff) {
+                        return input.modified.toString() === uri.toString()
+                            || input.original.toString() === uri.toString();
+                    }
+                    return false;
+                });
+            assert.ok(!stillOpenTab, 'Expected tab to be closed');
+        } finally {
+            await deleteTempFile(uri);
+        }
+    }).timeout(15000);
+
     test('read_file_safe returns content', async () => {
         const uri = await createTempFile('tmp-read-safe.txt', 'hello world');
         try {

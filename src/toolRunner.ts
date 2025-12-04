@@ -1120,6 +1120,76 @@ export const runTool = async (name: string, args: any) => {
             break;
         }
 
+        case "open_file": {
+            const targetUri = args?.textDocument?.uri
+                ? vscode.Uri.parse(args.textDocument.uri)
+                : undefined;
+            if (!targetUri) {
+                throw new Error('textDocument.uri is required for open_file');
+            }
+            const doc = await vscode.workspace.openTextDocument(targetUri);
+            const editor = await vscode.window.showTextDocument(doc, { preview: false });
+            result = {
+                opened: true,
+                uri: doc.uri.toString(),
+                viewColumn: editor.viewColumn,
+                isActive: editor === vscode.window.activeTextEditor
+            };
+            break;
+        }
+
+        case "save_file": {
+            const targetUri = args?.textDocument?.uri
+                ? vscode.Uri.parse(args.textDocument.uri)
+                : undefined;
+            if (!targetUri) {
+                throw new Error('textDocument.uri is required for save_file');
+            }
+            const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === targetUri.toString());
+            if (!doc) {
+                result = { saved: false, notOpen: true, uri: targetUri.toString() };
+                break;
+            }
+            const wasDirty = doc.isDirty;
+            const saved = wasDirty ? await doc.save() : true;
+            result = { saved, wasDirty, uri: targetUri.toString() };
+            break;
+        }
+
+        case "close_file": {
+            const targetUri = args?.textDocument?.uri
+                ? vscode.Uri.parse(args.textDocument.uri)
+                : undefined;
+            if (!targetUri) {
+                throw new Error('textDocument.uri is required for close_file');
+            }
+
+            const tabs = vscode.window.tabGroups.all.flatMap(group =>
+                group.tabs.map(tab => ({ group, tab }))
+            );
+
+            const match = tabs.find(entry => {
+                const input = entry.tab.input;
+                if (input instanceof vscode.TabInputText) {
+                    return input.uri.toString() === targetUri.toString();
+                }
+                if (input instanceof vscode.TabInputTextDiff) {
+                    return input.modified.toString() === targetUri.toString()
+                        || input.original.toString() === targetUri.toString();
+                }
+                return false;
+            });
+
+            if (!match) {
+                result = { closed: false, notOpen: true, uri: targetUri.toString() };
+                break;
+            }
+
+            const closed = await vscode.window.tabGroups.close(match.tab);
+            result = { closed, uri: targetUri.toString() };
+            break;
+        }
+
         case "get_cursor_context": {
             let doc: vscode.TextDocument | undefined;
             if (uri) {

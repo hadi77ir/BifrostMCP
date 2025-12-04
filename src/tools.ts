@@ -1199,6 +1199,60 @@ export const mcpTools = [
         }
     },
     {
+        name: "open_file",
+        description: "Opens a file and makes it the active editor tab.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The document to open",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "save_file",
+        description: "Saves an opened file if it has unsaved changes.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The opened document to save",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
+        name: "close_file",
+        description: "Closes an opened file tab.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                textDocument: {
+                    type: "object",
+                    description: "The opened document to close",
+                    properties: {
+                        uri: { type: "string" }
+                    },
+                    required: ["uri"]
+                }
+            },
+            required: ["textDocument"]
+        }
+    },
+    {
         name: "get_cursor_context",
         description: "Returns a window of text around the current cursor and injects a random HTML-like tag at the exact cursor offset so you can jump back to it later. " +
             "Use this to capture nearby code for analysis while remembering the precise cursor location; pair the returned tag with move_cursor for deterministic navigation.",
@@ -1890,6 +1944,9 @@ const toolShortDescriptions: Record<string, string> = {
     "get_workspace_diagnostics": "Get diagnostic information for the workspace",
     "get_file_diagnostics": "Get diagnostic information for a specific file",
     "get_open_files": "List currently open editors and selections",
+    "open_file": "Open a file and make it the active editor tab",
+    "save_file": "Save an opened file if it is dirty",
+    "close_file": "Close an opened file tab",
     "get_cursor_context": "Capture tagged context around the current cursor",
     "move_cursor": "Move the cursor to a position or text match in a file",
     "get_cursor_position": "Report the active cursor line/character",
